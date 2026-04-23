@@ -106,6 +106,7 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 		if (R.bAccepted)
 		{
 			UE_LOG(LogAssemblyLine, Log, TEXT("BUCKET ACCEPTED: %s"), *Bucket->GetContentsString());
+			OnCycleCompleted.Broadcast(Bucket);
 			if (bAutoLoop)
 			{
 				FTimerHandle Th;

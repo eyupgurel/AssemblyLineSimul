@@ -9,6 +9,8 @@ class AStation;
 class AWorkerRobot;
 class ABucket;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleCompleted, ABucket* /*Bucket*/);
+
 UCLASS()
 class ASSEMBLYLINESIMUL_API UAssemblyLineDirector : public UWorldSubsystem
 {
@@ -21,6 +23,9 @@ public:
 	// Start a fresh cycle: spawn an empty bucket, dispatch Generator robot.
 	UFUNCTION(BlueprintCallable, Category = "AssemblyLine")
 	void StartCycle();
+
+	// Fires when the Checker accepts a bucket (i.e. one full cycle finished without rework).
+	FOnAssemblyLineCycleCompleted OnCycleCompleted;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AssemblyLine")
 	float DelayBetweenCycles = 2.0f;

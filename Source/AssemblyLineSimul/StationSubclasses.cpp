@@ -45,6 +45,8 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 		Bucket->Contents.Add(FMath::RandRange(MinValue, MaxValue));
 	}
 	Bucket->RefreshLabel();
+	SpeakStreaming(FString::Printf(TEXT("Generated %d random numbers in [%d, %d]"),
+		BucketSize, MinValue, MaxValue));
 
 	FStationProcessResult R; R.bAccepted = true;
 	OnComplete.ExecuteIfBound(R);
@@ -80,8 +82,10 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 			Filtered.Add(N);
 		}
 	}
+	const int32 KeptCount = Filtered.Num();
 	Bucket->Contents = MoveTemp(Filtered);
 	Bucket->RefreshLabel();
+	SpeakStreaming(FString::Printf(TEXT("Kept %d primes"), KeptCount));
 
 	FStationProcessResult R; R.bAccepted = true;
 	OnComplete.ExecuteIfBound(R);
@@ -114,6 +118,7 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 		Bucket->Contents.Swap(Idx, Idx + 1);
 	}
 	Bucket->RefreshLabel();
+	SpeakStreaming(TEXT("Sorted ascending"));
 
 	FStationProcessResult R; R.bAccepted = true;
 	OnComplete.ExecuteIfBound(R);
@@ -151,8 +156,13 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 		TEXT("{\"verdict\":\"pass\"|\"reject\",\"reason\":\"...\",\"send_back_to\":\"Filter\"|\"Sorter\"|null}\n")
 		TEXT("If verdict is pass, send_back_to MUST be null. ")
 		TEXT("If non-primes are present, send back to Filter. ")
-		TEXT("If only ordering is wrong, send back to Sorter."),
+		TEXT("If only ordering is wrong, send back to Sorter. ")
+		TEXT("The 'reason' must be ONE plain-English sentence (no jargon, no JSON-speak) ")
+		TEXT("that an audience can read on a screen — name specific offending numbers if relevant. ")
+		TEXT("Keep reason under 140 characters."),
 		*Numbers);
+
+	SpeakStreaming(FString::Printf(TEXT("Inspecting bucket: %s"), *Numbers));
 
 	if (!Claude)
 	{
@@ -170,6 +180,8 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 		else if (!bSorted) { R.bAccepted = false; R.Reason = TEXT("Out of order"); R.SendBackTo = EStationType::Sorter; }
 		else if (!bInRange) { R.bAccepted = false; R.Reason = TEXT("Out of range"); R.SendBackTo = EStationType::Filter; }
 		else { R.Reason = TEXT("All checks passed"); }
+		SpeakStreaming(FString::Printf(TEXT("%s: %s"),
+			R.bAccepted ? TEXT("PASS") : TEXT("REJECT"), *R.Reason));
 		OnComplete.ExecuteIfBound(R);
 		return;
 	}
@@ -183,6 +195,10 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 			{
 				R.bAccepted = true;
 				R.Reason = TEXT("LLM unreachable, accepting by default");
+				if (ACheckerStation* Self = WeakThis.Get())
+				{
+					Self->SpeakStreaming(FString::Printf(TEXT("LLM unreachable — %s"), *Response));
+				}
 				OnComplete.ExecuteIfBound(R);
 				return;
 			}
@@ -215,6 +231,12 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 			else
 			{
 				R.SendBackTo = EStationType::Filter;
+			}
+
+			if (ACheckerStation* Self = WeakThis.Get())
+			{
+				Self->SpeakStreaming(FString::Printf(TEXT("[%s] %s"),
+					R.bAccepted ? TEXT("PASS") : TEXT("REJECT"), *R.Reason));
 			}
 			OnComplete.ExecuteIfBound(R);
 		}));

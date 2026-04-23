@@ -41,10 +41,10 @@ AWorkerRobot::AWorkerRobot()
 
 	StateLabel = CreateDefaultSubobject<UTextRenderComponent>(TEXT("StateLabel"));
 	StateLabel->SetupAttachment(RootComponent);
-	StateLabel->SetRelativeLocation(FVector(0.f, 0.f, 160.f));
+	StateLabel->SetRelativeLocation(FVector(0.f, 0.f, 180.f));
 	StateLabel->SetHorizontalAlignment(EHTA_Center);
 	StateLabel->SetVerticalAlignment(EVRTA_TextCenter);
-	StateLabel->SetWorldSize(20.f);
+	StateLabel->SetWorldSize(40.f);
 	StateLabel->SetTextRenderColor(FColor::White);
 	StateLabel->SetText(FText::FromString(TEXT("Idle")));
 }
@@ -184,7 +184,7 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 	{
 		WorkTimer += DeltaSeconds;
 		const float Required = (AssignedStation && AssignedStation->StationType == EStationType::Checker)
-			? FMath::Max(WorkDuration, 4.0f)  // give the LLM call time to finish
+			? FMath::Max(WorkDuration, 10.0f)  // LLM call (~2s) + streaming reveal (~6s) + buffer
 			: WorkDuration;
 
 		if (WorkTimer >= Required)
@@ -214,7 +214,12 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 			{
 				EnterState(EWorkerState::MoveToOutput);
 			}
-			State = EWorkerState::Idle;  // park while async work runs
+			// Only park in Idle if the completion delegate hasn't already advanced us.
+			// Sync stations fire the delegate inside ProcessBucket; async ones fire it later.
+			if (State == EWorkerState::Working)
+			{
+				State = EWorkerState::Idle;
+			}
 		}
 		break;
 	}

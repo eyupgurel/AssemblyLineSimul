@@ -20,11 +20,11 @@ ABucket::ABucket()
 
 	ContentsLabel = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ContentsLabel"));
 	ContentsLabel->SetupAttachment(RootComponent);
-	ContentsLabel->SetRelativeLocation(FVector(0.f, 0.f, 80.f));
+	ContentsLabel->SetRelativeLocation(FVector(0.f, 0.f, 100.f));
 	ContentsLabel->SetRelativeRotation(FRotator(0.f, 180.f, 0.f));
 	ContentsLabel->SetHorizontalAlignment(EHTA_Center);
 	ContentsLabel->SetVerticalAlignment(EVRTA_TextCenter);
-	ContentsLabel->SetWorldSize(20.f);
+	ContentsLabel->SetWorldSize(35.f);
 	ContentsLabel->SetTextRenderColor(FColor::Yellow);
 	ContentsLabel->SetText(FText::FromString(TEXT("[]")));
 }
