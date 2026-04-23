@@ -8,6 +8,8 @@
 class ABucket;
 class AStation;
 class UCapsuleComponent;
+class USkeletalMeshComponent;
+class USkeletalMesh;
 class UStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
@@ -44,6 +46,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Robot")
 	TObjectPtr<UStaticMeshComponent> HeadMesh;
 
+	// Replaces the placeholder body+head primitives when ApplyBodyMesh is called with a non-null mesh.
+	UPROPERTY(VisibleAnywhere, Category = "Robot")
+	TObjectPtr<USkeletalMeshComponent> SkeletalBodyMesh;
+
+	// Asset to load via LoadAndApplyBodyMesh; the GameMode propagates its WorkerRobotMeshAsset here.
+	UPROPERTY()
+	TSoftObjectPtr<USkeletalMesh> BodyMeshAsset;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Robot")
 	TObjectPtr<USceneComponent> CarrySocket;
 
@@ -64,6 +74,15 @@ public:
 	FStationProcessResult LastResult;
 
 	void AssignStation(AStation* Station);
+
+	// Assigns ResolvedMesh to SkeletalBodyMesh and hides placeholders. Null is a no-op.
+	void ApplyBodyMesh(USkeletalMesh* ResolvedMesh);
+
+	// Synchronously loads BodyMeshAsset and calls ApplyBodyMesh.
+	void LoadAndApplyBodyMesh();
+
+	// Applies a per-instance tint color to the active body material.
+	void ApplyTint(const FLinearColor& Color);
 
 	// Order this robot to fetch a bucket from FromSlot, run their station's work,
 	// place the result at ToSlot, then return home.

@@ -3,9 +3,12 @@
 #include "Station.h"
 #include "AssemblyLineTypes.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
 AWorkerRobot::AWorkerRobot()
@@ -35,6 +38,11 @@ AWorkerRobot::AWorkerRobot()
 	if (CubeFinder.Succeeded())   BodyMesh->SetStaticMesh(CubeFinder.Object);
 	if (SphereFinder.Succeeded()) HeadMesh->SetStaticMesh(SphereFinder.Object);
 
+	SkeletalBodyMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("SkeletalBodyMesh"));
+	SkeletalBodyMesh->SetupAttachment(RootComponent);
+	SkeletalBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SkeletalBodyMesh->SetVisibility(false);  // hidden until ApplyBodyMesh receives a mesh
+
 	CarrySocket = CreateDefaultSubobject<USceneComponent>(TEXT("CarrySocket"));
 	CarrySocket->SetupAttachment(RootComponent);
 	CarrySocket->SetRelativeLocation(FVector(60.f, 0.f, 0.f));
@@ -47,6 +55,38 @@ AWorkerRobot::AWorkerRobot()
 	StateLabel->SetWorldSize(40.f);
 	StateLabel->SetTextRenderColor(FColor::White);
 	StateLabel->SetText(FText::FromString(TEXT("Idle")));
+}
+
+void AWorkerRobot::ApplyBodyMesh(USkeletalMesh* ResolvedMesh)
+{
+	if (!ResolvedMesh || !SkeletalBodyMesh) return;
+	SkeletalBodyMesh->SetSkeletalMeshAsset(ResolvedMesh);
+	SkeletalBodyMesh->SetVisibility(true);
+	if (BodyMesh) BodyMesh->SetVisibility(false);
+	if (HeadMesh) HeadMesh->SetVisibility(false);
+}
+
+void AWorkerRobot::LoadAndApplyBodyMesh()
+{
+	if (BodyMeshAsset.IsNull()) return;
+	ApplyBodyMesh(BodyMeshAsset.LoadSynchronous());
+}
+
+void AWorkerRobot::ApplyTint(const FLinearColor& Color)
+{
+	UMeshComponent* Active = (SkeletalBodyMesh && SkeletalBodyMesh->IsVisible())
+		? static_cast<UMeshComponent*>(SkeletalBodyMesh.Get())
+		: static_cast<UMeshComponent*>(BodyMesh.Get());
+	if (!Active) return;
+
+	const int32 NumMaterials = Active->GetNumMaterials();
+	for (int32 i = 0; i < NumMaterials; ++i)
+	{
+		if (UMaterialInstanceDynamic* MID = Active->CreateAndSetMaterialInstanceDynamic(i))
+		{
+			MID->SetVectorParameterValue(TEXT("BodyTint"), Color);
+		}
+	}
 }
 
 void AWorkerRobot::AssignStation(AStation* Station)

@@ -8,7 +8,10 @@
 #include "TestStations.h"
 #include "WorkerRobot.h"
 #include "Components/SceneComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/WorldSettings.h"
 
@@ -84,6 +87,47 @@ DEFINE_SPEC(FWorkerRobotSpec,
 void FWorkerRobotSpec::Define()
 {
 	using namespace AssemblyLineSimulTests;
+
+	Describe("BodyMesh", [this]()
+	{
+		It("constructs with SkeletalBodyMesh hidden and placeholder primitives visible", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_BodyMesh_Default"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+
+			TestNotNull(TEXT("SkeletalBodyMesh exists"), Worker->SkeletalBodyMesh.Get());
+			TestFalse(TEXT("SkeletalBodyMesh hidden by default"), Worker->SkeletalBodyMesh->IsVisible());
+			TestTrue(TEXT("Placeholder body visible by default"), Worker->BodyMesh->IsVisible());
+			TestTrue(TEXT("Placeholder head visible by default"), Worker->HeadMesh->IsVisible());
+		});
+
+		It("ApplyBodyMesh assigns the mesh and hides the placeholder primitives", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_BodyMesh_Apply"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+
+			USkeletalMesh* TestMesh = NewObject<USkeletalMesh>(GetTransientPackage());
+			Worker->ApplyBodyMesh(TestMesh);
+
+			TestEqual(TEXT("SkeletalBodyMesh holds assigned mesh"),
+				Worker->SkeletalBodyMesh->GetSkeletalMeshAsset(), TestMesh);
+			TestTrue(TEXT("SkeletalBodyMesh visible after apply"), Worker->SkeletalBodyMesh->IsVisible());
+			TestFalse(TEXT("Placeholder body hidden after apply"), Worker->BodyMesh->IsVisible());
+			TestFalse(TEXT("Placeholder head hidden after apply"), Worker->HeadMesh->IsVisible());
+		});
+
+		It("ApplyBodyMesh(nullptr) is a no-op and leaves the placeholder visible", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_BodyMesh_Null"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+
+			Worker->ApplyBodyMesh(nullptr);
+
+			TestNull(TEXT("SkeletalBodyMesh remains empty"), Worker->SkeletalBodyMesh->GetSkeletalMeshAsset());
+			TestFalse(TEXT("SkeletalBodyMesh stays hidden"), Worker->SkeletalBodyMesh->IsVisible());
+			TestTrue(TEXT("Placeholder body still visible"), Worker->BodyMesh->IsVisible());
+		});
+	});
 
 	Describe("BeginTask", [this]()
 	{
