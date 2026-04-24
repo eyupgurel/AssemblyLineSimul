@@ -152,7 +152,17 @@ void ACinematicCameraDirector::HandleStationActive(EStationType StationType)
 
 void ACinematicCameraDirector::HandleStationIdle(EStationType /*StationType*/)
 {
-	JumpToShot(ResumeShotIndex);
+	UWorld* W = GetWorld();
+	if (LingerSecondsAfterIdle <= 0.f || !W)
+	{
+		JumpToShot(ResumeShotIndex);
+		return;
+	}
+	W->GetTimerManager().ClearTimer(IdleLingerTimer);
+	const int32 ResumeIdx = ResumeShotIndex;
+	W->GetTimerManager().SetTimer(IdleLingerTimer,
+		FTimerDelegate::CreateLambda([this, ResumeIdx]() { JumpToShot(ResumeIdx); }),
+		LingerSecondsAfterIdle, false);
 }
 
 void ACinematicCameraDirector::HandleSkipPressed()
@@ -208,6 +218,7 @@ void ACinematicCameraDirector::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (UWorld* W = GetWorld())
 	{
 		W->GetTimerManager().ClearTimer(ShotTimer);
+		W->GetTimerManager().ClearTimer(IdleLingerTimer);
 	}
 	Super::EndPlay(EndPlayReason);
 }

@@ -56,6 +56,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Cinematic")
 	TMap<EStationType, int32> StationCloseupShotIndex;
 
+	// On OnStationIdle, hold the closeup this many seconds before jumping to the resume shot.
+	// Default 0 keeps tests deterministic; production GameMode bumps this for a more relaxed pacing.
+	UPROPERTY(EditAnywhere, Category = "Cinematic")
+	float LingerSecondsAfterIdle = 0.f;
+
 	void Start();
 	void Stop();
 	void AdvanceShot();
@@ -71,6 +76,7 @@ protected:
 private:
 	int32 CurrentShotIndex = 0;
 	FTimerHandle ShotTimer;
+	FTimerHandle IdleLingerTimer;
 
 	UPROPERTY()
 	TArray<TObjectPtr<ACameraActor>> ShotCameras;

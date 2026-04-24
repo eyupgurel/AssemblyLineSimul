@@ -99,13 +99,16 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 	};
 
 	Cinematic->Shots.Reset();
-	// 0: wide overview (also the resume shot between station phases)
-	Cinematic->Shots.Add(MakeShot(LineCenter + FVector(-2200.f, 2200.f, 1600.f), LineCenter, 85.f, 6.f, 1.2f));
-	// 1..4: per-station closeups, framed slightly above + offset toward camera-side
+	// 0: wide overview (also the resume shot). Slow blend out of closeups for relaxed pacing.
+	Cinematic->Shots.Add(MakeShot(LineCenter + FVector(-2200.f, 2200.f, 1600.f), LineCenter, 85.f, 8.f, 2.5f));
+	// 1..4: per-station closeups framed on the BUCKET (which sits at the worker's carry socket
+	// ~190cm in front of each station). Slightly elevated and pulled back so the floating numbers
+	// above the balls are in frame too.
 	for (int32 i = 0; i < StationCount; ++i)
 	{
 		const FVector S = StationLoc(i);
-		Cinematic->Shots.Add(MakeShot(S + FVector(-450.f, 700.f, 350.f), S + FVector(0.f, 0.f, 100.f), 60.f, 6.f, 1.0f));
+		const FVector BucketArea = S + FVector(-190.f, 0.f, 30.f);
+		Cinematic->Shots.Add(MakeShot(S + FVector(-450.f, 700.f, 250.f), BucketArea, 55.f, 8.f, 2.5f));
 	}
 
 	Cinematic->StationCloseupShotIndex.Reset();
@@ -115,6 +118,7 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 	Cinematic->StationCloseupShotIndex.Add(EStationType::Checker,   4);
 	Cinematic->CheckerShotIndex = 4;
 	Cinematic->ResumeShotIndex  = 0;
+	Cinematic->LingerSecondsAfterIdle = 1.5f;  // hold the closeup briefly after Place before zooming out
 
 	Cinematic->BindToAssemblyLine(Director);
 	Cinematic->Start();
