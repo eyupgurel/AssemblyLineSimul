@@ -8,6 +8,8 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace AssemblyLineBucketTests
 {
@@ -116,6 +118,51 @@ void FBucketSpec::Define()
 
 			TestEqual(TEXT("ball count matches latest Contents"), Bucket->NumberBalls.Num(), 2);
 			TestEqual(TEXT("label count matches latest Contents"), Bucket->NumberBallLabels.Num(), 2);
+		});
+	});
+
+	Describe("BilliardBallMaterial", [this]()
+	{
+		It("applies a UMaterialInstanceDynamic to each ball when material is set", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_Billiard_Set"));
+			ABucket* Bucket = SpawnBucket(TW.World);
+			if (!Bucket) return;
+
+			UMaterialInterface* StubMaterial = LoadObject<UMaterialInterface>(
+				nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+			TestNotNull(TEXT("stub material loaded"), StubMaterial);
+			if (!StubMaterial) return;
+			Bucket->BilliardBallMaterial = StubMaterial;
+
+			Bucket->Contents = { 1, 2, 3 };
+			Bucket->RefreshContents();
+
+			TestEqual(TEXT("3 balls"), Bucket->NumberBalls.Num(), 3);
+			for (int32 i = 0; i < Bucket->NumberBalls.Num(); ++i)
+			{
+				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(
+					Bucket->NumberBalls[i]->GetMaterial(0));
+				TestNotNull(*FString::Printf(TEXT("ball %d has MID"), i), MID);
+			}
+		});
+
+		It("leaves the default material on each ball when BilliardBallMaterial is unset", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_Billiard_Unset"));
+			ABucket* Bucket = SpawnBucket(TW.World);
+			if (!Bucket) return;
+
+			Bucket->Contents = { 7, 11 };
+			Bucket->RefreshContents();
+
+			TestEqual(TEXT("2 balls"), Bucket->NumberBalls.Num(), 2);
+			for (int32 i = 0; i < Bucket->NumberBalls.Num(); ++i)
+			{
+				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(
+					Bucket->NumberBalls[i]->GetMaterial(0));
+				TestNull(*FString::Printf(TEXT("ball %d uses default (no MID)"), i), MID);
+			}
 		});
 	});
 }

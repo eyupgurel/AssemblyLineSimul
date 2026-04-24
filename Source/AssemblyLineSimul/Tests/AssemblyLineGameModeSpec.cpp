@@ -3,6 +3,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "AssemblyLineDirector.h"
 #include "AssemblyLineGameMode.h"
 #include "CinematicCameraDirector.h"
 #include "Station.h"
@@ -109,6 +110,30 @@ void FAssemblyLineGameModeSpec::Define()
 
 			TestEqual(TEXT("Spawned 4 stations"), StationCount, 4);
 			TestEqual(TEXT("All stations adopted GameMode's TalkWidgetClass"), PropagatedCount, 4);
+		});
+	});
+
+	Describe("SpawnCinematicDirector", [this]()
+	{
+		It("propagates BucketClass to the Director", [this]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_BucketClassPropagation"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			TestNotNull(TEXT("GameMode spawned"), GM);
+			if (!GM) return;
+
+			GM->BucketClass = ATestBucketSubclass::StaticClass();
+			GM->SpawnAssemblyLine();
+
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			TestNotNull(TEXT("Director subsystem"), Director);
+			if (!Director) return;
+			TestEqual(TEXT("Director.BucketClass matches GameMode's"),
+				Director->BucketClass.Get(), GM->BucketClass.Get());
 		});
 	});
 

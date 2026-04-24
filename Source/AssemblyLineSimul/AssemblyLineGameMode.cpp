@@ -24,6 +24,11 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return;
 
+	if (BucketClass)
+	{
+		Director->BucketClass = BucketClass;
+	}
+
 	const TArray<TSubclassOf<AStation>> Specs = {
 		AGeneratorStation::StaticClass(),
 		AFilterStation::StaticClass(),

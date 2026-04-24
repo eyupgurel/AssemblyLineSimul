@@ -3,11 +3,11 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "AssemblyLineTypes.h"
+#include "Bucket.h"  // ABucket complete type needed for TSubclassOf<ABucket>
 #include "AssemblyLineDirector.generated.h"
 
 class AStation;
 class AWorkerRobot;
-class ABucket;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleCompleted, ABucket* /*Bucket*/);
 DECLARE_MULTICAST_DELEGATE(FOnAssemblyLineCheckerStarted);
@@ -48,6 +48,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AssemblyLine")
 	bool bAutoLoop = true;
+
+	// Class spawned for each new bucket; override with a Blueprint subclass to set
+	// BilliardBallMaterial or other defaults.
+	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
+	TSubclassOf<ABucket> BucketClass = nullptr;
 
 private:
 	UPROPERTY()

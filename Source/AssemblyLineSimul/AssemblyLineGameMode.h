@@ -7,6 +7,7 @@
 
 class USkeletalMesh;
 class UStationTalkWidget;
+class ABucket;
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API AAssemblyLineGameMode : public AGameModeBase
@@ -34,6 +35,11 @@ public:
 	// UMG widget class assigned to every spawned station's TalkWidgetClass.
 	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
 	TSubclassOf<UStationTalkWidget> StationTalkWidgetClass;
+
+	// Bucket class propagated to the Director so newly-spawned buckets adopt e.g. a
+	// Blueprint subclass that has BilliardBallMaterial set.
+	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
+	TSubclassOf<ABucket> BucketClass;
 
 	// Spawns 4 stations + 4 workers + cinematic camera and registers them with the Director.
 	// Public so tests can drive without running the full BeginPlay path.

@@ -6,6 +6,8 @@
 
 class UStaticMeshComponent;
 class UTextRenderComponent;
+class UMaterialInterface;
+class UFont;
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API ABucket : public AActor
@@ -32,6 +34,12 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Bucket")
 	TArray<TObjectPtr<UTextRenderComponent>> NumberBallLabels;
 
+	// When set, RefreshContents paints each ball with a render-target texture of its number
+	// applied via a dynamic material instance of this material. Expected parameters on the
+	// material: NumberTexture (Texture2D), BaseColor (Vector).
+	UPROPERTY(EditAnywhere, Category = "Bucket")
+	TSoftObjectPtr<UMaterialInterface> BilliardBallMaterial;
+
 	UFUNCTION(BlueprintCallable, Category = "Bucket")
 	FString GetContentsString() const;
 
@@ -47,4 +55,7 @@ private:
 	// Cached at construction so RefreshContents can build balls without runtime asset lookup.
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> CachedSphereMesh;
+
+	UPROPERTY()
+	TObjectPtr<UFont> CachedNumberFont;
 };

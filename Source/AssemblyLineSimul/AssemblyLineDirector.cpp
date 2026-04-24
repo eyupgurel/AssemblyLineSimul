@@ -54,7 +54,8 @@ void UAssemblyLineDirector::StartCycle()
 
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ABucket* Bucket = GetWorld()->SpawnActor<ABucket>(ABucket::StaticClass(), SpawnLoc, FRotator::ZeroRotator, Params);
+	UClass* Cls = BucketClass ? BucketClass.Get() : ABucket::StaticClass();
+	ABucket* Bucket = GetWorld()->SpawnActor<ABucket>(Cls, SpawnLoc, FRotator::ZeroRotator, Params);
 	if (!Bucket)
 	{
 		UE_LOG(LogAssemblyLine, Error, TEXT("StartCycle: failed to spawn bucket."));

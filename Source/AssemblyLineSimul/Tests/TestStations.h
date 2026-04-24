@@ -1,12 +1,19 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Bucket.h"
 #include "Station.h"
 #include "StationTalkWidget.h"
 #include "TestStations.generated.h"
 
 UCLASS(NotBlueprintable, NotPlaceable, HideDropdown)
 class UTestDerivedTalkWidget : public UStationTalkWidget
+{
+	GENERATED_BODY()
+};
+
+UCLASS(NotBlueprintable, NotPlaceable, HideDropdown)
+class ATestBucketSubclass : public ABucket
 {
 	GENERATED_BODY()
 };
