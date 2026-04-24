@@ -4,6 +4,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "AssemblyLineGameMode.h"
+#include "CinematicCameraDirector.h"
 #include "WorkerRobot.h"
 #include "Engine/Engine.h"
 #include "Engine/SkeletalMesh.h"
@@ -77,6 +78,35 @@ void FAssemblyLineGameModeSpec::Define()
 
 			TestEqual(TEXT("Spawned 4 workers"), WorkerCount, 4);
 			TestEqual(TEXT("All workers have GameMode's mesh asset"), PropagatedCount, 4);
+		});
+	});
+
+	Describe("SpawnCinematicDirector", [this]()
+	{
+		It("spawns exactly one ACinematicCameraDirector with at least one shot configured", [this]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_CinematicSpawn"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			TestNotNull(TEXT("GameMode spawned"), GM);
+			if (!GM) return;
+
+			GM->SpawnAssemblyLine();
+			GM->SpawnCinematicDirector();
+
+			int32 CinDirectorCount = 0;
+			int32 ShotsConfigured = 0;
+			for (TActorIterator<ACinematicCameraDirector> It(TW.World); It; ++It)
+			{
+				++CinDirectorCount;
+				ShotsConfigured = It->Shots.Num();
+			}
+
+			TestEqual(TEXT("exactly one CinematicCameraDirector spawned"), CinDirectorCount, 1);
+			TestTrue(TEXT("at least one shot configured"), ShotsConfigured > 0);
 		});
 	});
 }

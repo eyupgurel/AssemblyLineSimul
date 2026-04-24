@@ -34,6 +34,10 @@ public:
 	// Public so tests can drive without running the full BeginPlay path.
 	void SpawnAssemblyLine();
 
+	// Spawns the ACinematicCameraDirector with a default 3-shot sequence (wide / mid / checker).
+	// Public so tests can verify spawn without the full BeginPlay path.
+	void SpawnCinematicDirector();
+
 protected:
 	virtual void BeginPlay() override;
 };

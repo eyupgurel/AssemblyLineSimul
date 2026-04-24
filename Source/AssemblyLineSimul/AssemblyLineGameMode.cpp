@@ -1,14 +1,11 @@
 #include "AssemblyLineGameMode.h"
 #include "AssemblyLineDirector.h"
+#include "CinematicCameraDirector.h"
 #include "Station.h"
 #include "StationSubclasses.h"
 #include "WorkerRobot.h"
-#include "Camera/CameraActor.h"
-#include "Camera/CameraComponent.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
-#include "GameFramework/PlayerController.h"
-#include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
 AAssemblyLineGameMode::AAssemblyLineGameMode()
@@ -62,6 +59,47 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 	}
 }
 
+void AAssemblyLineGameMode::SpawnCinematicDirector()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
+	if (!Director) return;
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ACinematicCameraDirector* Cinematic = World->SpawnActor<ACinematicCameraDirector>(
+		ACinematicCameraDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+	if (!Cinematic) return;
+
+	const int32 StationCount = 4;
+	const FVector LineCenter = LineOrigin
+		+ FVector(static_cast<float>(StationCount - 1) * 0.5f * StationSpacing, 0.f, 0.f);
+	const FVector CheckerLoc = LineOrigin
+		+ FVector(static_cast<float>(StationCount - 1) * StationSpacing, 0.f, 0.f);
+
+	auto MakeShot = [](const FVector& Loc, const FVector& LookAt, float FOV, float Hold, float Blend)
+	{
+		FCinematicShot Shot;
+		Shot.Location = Loc;
+		Shot.Rotation = (LookAt - Loc).Rotation();
+		Shot.FieldOfView = FOV;
+		Shot.HoldDuration = Hold;
+		Shot.BlendDuration = Blend;
+		return Shot;
+	};
+
+	Cinematic->Shots.Reset();
+	Cinematic->Shots.Add(MakeShot(LineCenter + FVector(-2200.f, 2200.f, 1600.f), LineCenter, 85.f, 6.f, 1.5f));
+	Cinematic->Shots.Add(MakeShot(LineCenter + FVector(-1200.f, 1500.f,  800.f), LineCenter, 75.f, 4.f, 1.5f));
+	Cinematic->Shots.Add(MakeShot(CheckerLoc + FVector(    0.f, 1000.f,  600.f), CheckerLoc, 60.f, 5.f, 1.5f));
+	Cinematic->CheckerShotIndex = 2;
+	Cinematic->ResumeShotIndex = 0;
+
+	Cinematic->BindToAssemblyLine(Director);
+	Cinematic->Start();
+}
+
 void AAssemblyLineGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -76,46 +114,15 @@ void AAssemblyLineGameMode::BeginPlay()
 	}
 
 	SpawnAssemblyLine();
+	SpawnCinematicDirector();
 
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return;
 
-	// Cinematic camera framing the whole line; player view is forced to it once the
-	// player controller exists.
-	const int32 StationCount = 4;
-	const FVector LineCenter = LineOrigin
-		+ FVector((float)(StationCount - 1) * 0.5f * StationSpacing, 0.f, 0.f);
-	const FVector CameraLoc = LineCenter + FVector(-2200.f, 2200.f, 1600.f);
-
-	FActorSpawnParameters Params;
-	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ACameraActor* Cam = World->SpawnActor<ACameraActor>(
-		ACameraActor::StaticClass(), CameraLoc, FRotator::ZeroRotator, Params);
-	if (Cam)
-	{
-		Cam->SetActorRotation((LineCenter - CameraLoc).Rotation());
-		if (UCameraComponent* CamComp = Cam->GetCameraComponent())
-		{
-			CamComp->SetFieldOfView(85.f);
-		}
-	}
-
 	FTimerHandle Th;
 	World->GetTimerManager().SetTimer(Th,
-		FTimerDelegate::CreateLambda([this, World, Director, Cam]()
+		FTimerDelegate::CreateLambda([Director]()
 		{
-			if (Cam)
-			{
-				if (APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0))
-				{
-					PC->SetViewTargetWithBlend(Cam, 0.0f);
-					if (GEngine)
-					{
-						GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Green,
-							TEXT("View target set to assembly-line camera"));
-					}
-				}
-			}
 			Director->StartCycle();
 		}),
 		1.5f, false);

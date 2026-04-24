@@ -70,6 +70,11 @@ void UAssemblyLineDirector::DispatchToStation(EStationType Type, ABucket* Bucket
 		return;
 	}
 
+	if (Type == EStationType::Checker)
+	{
+		OnCheckerStarted.Broadcast();
+	}
+
 	// FromSlot: if there's a source station, that station's OutputSlot — otherwise the target's InputSlot
 	// (which is also where the Director just spawned the empty bucket for the Generator).
 	USceneComponent* FromSlot = SourceStation
@@ -124,6 +129,7 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 			UE_LOG(LogAssemblyLine, Log, TEXT("BUCKET REJECTED (%s) — sending back to %s"),
 				*R.Reason,
 				R.SendBackTo == EStationType::Filter ? TEXT("Filter") : TEXT("Sorter"));
+			OnCycleRejected.Broadcast(Bucket);
 			DispatchToStation(R.SendBackTo, Bucket, GetStation(EStationType::Checker));
 		}
 		break;

@@ -12,7 +12,8 @@ public class AssemblyLineSimul : ModuleRules
 			"Core", "CoreUObject", "Engine", "InputCore",
 			"AIModule", "NavigationSystem",
 			"GameplayTags", "GameplayTasks",
-			"UMG", "Slate", "SlateCore"
+			"UMG", "Slate", "SlateCore",
+			"EnhancedInput"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
