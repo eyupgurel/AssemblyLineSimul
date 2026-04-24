@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "AssemblyLineTypes.h"
 #include "CinematicCameraDirector.generated.h"
 
 class ABucket;
@@ -51,6 +52,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Cinematic")
 	int32 ResumeShotIndex = 0;
 
+	// Maps a station type to the shot index the camera should jump to when that station becomes active.
+	UPROPERTY(EditAnywhere, Category = "Cinematic")
+	TMap<EStationType, int32> StationCloseupShotIndex;
+
 	void Start();
 	void Stop();
 	void AdvanceShot();
@@ -76,6 +81,8 @@ private:
 	FDelegateHandle CheckerStartedHandle;
 	FDelegateHandle CycleCompletedHandle;
 	FDelegateHandle CycleRejectedHandle;
+	FDelegateHandle StationActiveHandle;
+	FDelegateHandle StationIdleHandle;
 
 	UPROPERTY()
 	TObjectPtr<UInputMappingContext> SkipMappingContext;
@@ -88,6 +95,8 @@ private:
 	void EnsureShotCameras();
 	void HandleCheckerStarted();
 	void HandleCycleResumed(ABucket* Bucket);
+	void HandleStationActive(EStationType StationType);
+	void HandleStationIdle(EStationType StationType);
 	void HandleSkipPressed();
 	void SetupSkipBinding();
 };

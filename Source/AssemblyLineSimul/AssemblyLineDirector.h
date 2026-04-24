@@ -12,6 +12,8 @@ class ABucket;
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleCompleted, ABucket* /*Bucket*/);
 DECLARE_MULTICAST_DELEGATE(FOnAssemblyLineCheckerStarted);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleRejected, ABucket* /*Bucket*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineStationActive, EStationType /*StationType*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineStationIdle, EStationType /*StationType*/);
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API UAssemblyLineDirector : public UWorldSubsystem
@@ -34,6 +36,12 @@ public:
 
 	// Fires when the Checker rejects a bucket (after which it gets sent back to a prior station).
 	FOnAssemblyLineCycleRejected OnCycleRejected;
+
+	// Fires when a registered worker enters the PickUp phase at its station.
+	FOnAssemblyLineStationActive OnStationActive;
+
+	// Fires when a registered worker enters the Place phase at its station.
+	FOnAssemblyLineStationIdle OnStationIdle;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AssemblyLine")
 	float DelayBetweenCycles = 2.0f;

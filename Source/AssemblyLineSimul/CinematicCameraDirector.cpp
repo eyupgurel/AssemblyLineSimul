@@ -71,6 +71,8 @@ void ACinematicCameraDirector::BindToAssemblyLine(UAssemblyLineDirector* Directo
 	CheckerStartedHandle = Director->OnCheckerStarted.AddUObject(this, &ACinematicCameraDirector::HandleCheckerStarted);
 	CycleCompletedHandle = Director->OnCycleCompleted.AddUObject(this, &ACinematicCameraDirector::HandleCycleResumed);
 	CycleRejectedHandle  = Director->OnCycleRejected .AddUObject(this, &ACinematicCameraDirector::HandleCycleResumed);
+	StationActiveHandle  = Director->OnStationActive .AddUObject(this, &ACinematicCameraDirector::HandleStationActive);
+	StationIdleHandle    = Director->OnStationIdle   .AddUObject(this, &ACinematicCameraDirector::HandleStationIdle);
 }
 
 void ACinematicCameraDirector::ApplyShot(int32 Index)
@@ -140,6 +142,19 @@ void ACinematicCameraDirector::HandleCycleResumed(ABucket* /*Bucket*/)
 	JumpToShot(ResumeShotIndex);
 }
 
+void ACinematicCameraDirector::HandleStationActive(EStationType StationType)
+{
+	if (const int32* Idx = StationCloseupShotIndex.Find(StationType))
+	{
+		JumpToShot(*Idx);
+	}
+}
+
+void ACinematicCameraDirector::HandleStationIdle(EStationType /*StationType*/)
+{
+	JumpToShot(ResumeShotIndex);
+}
+
 void ACinematicCameraDirector::HandleSkipPressed()
 {
 	AdvanceShot();
@@ -187,6 +202,8 @@ void ACinematicCameraDirector::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		D->OnCheckerStarted.Remove(CheckerStartedHandle);
 		D->OnCycleCompleted.Remove(CycleCompletedHandle);
 		D->OnCycleRejected.Remove(CycleRejectedHandle);
+		D->OnStationActive.Remove(StationActiveHandle);
+		D->OnStationIdle.Remove(StationIdleHandle);
 	}
 	if (UWorld* W = GetWorld())
 	{

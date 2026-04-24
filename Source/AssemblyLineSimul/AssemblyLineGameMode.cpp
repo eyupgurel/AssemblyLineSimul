@@ -81,8 +81,11 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 	const int32 StationCount = 4;
 	const FVector LineCenter = LineOrigin
 		+ FVector(static_cast<float>(StationCount - 1) * 0.5f * StationSpacing, 0.f, 0.f);
-	const FVector CheckerLoc = LineOrigin
-		+ FVector(static_cast<float>(StationCount - 1) * StationSpacing, 0.f, 0.f);
+
+	auto StationLoc = [&](int32 Idx)
+	{
+		return LineOrigin + FVector(static_cast<float>(Idx) * StationSpacing, 0.f, 0.f);
+	};
 
 	auto MakeShot = [](const FVector& Loc, const FVector& LookAt, float FOV, float Hold, float Blend)
 	{
@@ -96,11 +99,22 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 	};
 
 	Cinematic->Shots.Reset();
-	Cinematic->Shots.Add(MakeShot(LineCenter + FVector(-2200.f, 2200.f, 1600.f), LineCenter, 85.f, 6.f, 1.5f));
-	Cinematic->Shots.Add(MakeShot(LineCenter + FVector(-1200.f, 1500.f,  800.f), LineCenter, 75.f, 4.f, 1.5f));
-	Cinematic->Shots.Add(MakeShot(CheckerLoc + FVector(    0.f, 1000.f,  600.f), CheckerLoc, 60.f, 5.f, 1.5f));
-	Cinematic->CheckerShotIndex = 2;
-	Cinematic->ResumeShotIndex = 0;
+	// 0: wide overview (also the resume shot between station phases)
+	Cinematic->Shots.Add(MakeShot(LineCenter + FVector(-2200.f, 2200.f, 1600.f), LineCenter, 85.f, 6.f, 1.2f));
+	// 1..4: per-station closeups, framed slightly above + offset toward camera-side
+	for (int32 i = 0; i < StationCount; ++i)
+	{
+		const FVector S = StationLoc(i);
+		Cinematic->Shots.Add(MakeShot(S + FVector(-450.f, 700.f, 350.f), S + FVector(0.f, 0.f, 100.f), 60.f, 6.f, 1.0f));
+	}
+
+	Cinematic->StationCloseupShotIndex.Reset();
+	Cinematic->StationCloseupShotIndex.Add(EStationType::Generator, 1);
+	Cinematic->StationCloseupShotIndex.Add(EStationType::Filter,    2);
+	Cinematic->StationCloseupShotIndex.Add(EStationType::Sorter,    3);
+	Cinematic->StationCloseupShotIndex.Add(EStationType::Checker,   4);
+	Cinematic->CheckerShotIndex = 4;
+	Cinematic->ResumeShotIndex  = 0;
 
 	Cinematic->BindToAssemblyLine(Director);
 	Cinematic->Start();

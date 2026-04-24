@@ -19,6 +19,11 @@ void UAssemblyLineDirector::RegisterRobot(AWorkerRobot* Robot)
 	if (!Robot || !Robot->AssignedStation) return;
 	RobotByStation.Add(Robot->AssignedStation->StationType, Robot);
 	UE_LOG(LogAssemblyLine, Log, TEXT("Registered robot for: %s"), *Robot->AssignedStation->DisplayName);
+
+	// Re-broadcast worker phase events with station type so observers (the cinematic camera)
+	// can react without binding to every individual worker.
+	Robot->OnPickedUp.AddLambda([this](EStationType St) { OnStationActive.Broadcast(St); });
+	Robot->OnPlaced.AddLambda([this](EStationType St) { OnStationIdle.Broadcast(St); });
 }
 
 AStation* UAssemblyLineDirector::GetStation(EStationType Type) const

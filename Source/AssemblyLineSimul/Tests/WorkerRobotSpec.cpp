@@ -154,6 +154,63 @@ void FWorkerRobotSpec::Define()
 		});
 	});
 
+	Describe("Phase events", [this]()
+	{
+		It("fires OnPickedUp with the assigned station type when reaching PickUp", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerSpec_OnPickedUp"));
+			ATestSyncStation* Station = SpawnStationAt<ATestSyncStation>(TW.World, FVector::ZeroVector);
+			Station->StationType = EStationType::Filter;
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+			Worker->WorkDuration = 0.f;
+			Worker->AssignStation(Station);
+			Station->InputSlot->SetWorldLocation(Worker->GetActorLocation());
+			Station->OutputSlot->SetWorldLocation(Worker->GetActorLocation());
+
+			EStationType Captured = EStationType::Generator;
+			bool bFired = false;
+			Worker->OnPickedUp.AddLambda([&Captured, &bFired](EStationType St)
+			{
+				Captured = St;
+				bFired = true;
+			});
+
+			ABucket* Bucket = SpawnBucketAt(TW.World, FVector::ZeroVector);
+			Worker->BeginTask(Bucket, Station->InputSlot, Station->OutputSlot, FWorkerTaskComplete());
+			TickWorker(Worker, 50, 0.05f, [&]() { return bFired; });
+
+			TestTrue(TEXT("OnPickedUp fired"), bFired);
+			TestEqual(TEXT("station type passed"), static_cast<int32>(Captured), static_cast<int32>(EStationType::Filter));
+		});
+
+		It("fires OnPlaced with the assigned station type when reaching Place", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerSpec_OnPlaced"));
+			ATestSyncStation* Station = SpawnStationAt<ATestSyncStation>(TW.World, FVector::ZeroVector);
+			Station->StationType = EStationType::Sorter;
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+			Worker->WorkDuration = 0.f;
+			Worker->AssignStation(Station);
+			Station->InputSlot->SetWorldLocation(Worker->GetActorLocation());
+			Station->OutputSlot->SetWorldLocation(Worker->GetActorLocation());
+
+			EStationType Captured = EStationType::Generator;
+			bool bFired = false;
+			Worker->OnPlaced.AddLambda([&Captured, &bFired](EStationType St)
+			{
+				Captured = St;
+				bFired = true;
+			});
+
+			ABucket* Bucket = SpawnBucketAt(TW.World, FVector::ZeroVector);
+			Worker->BeginTask(Bucket, Station->InputSlot, Station->OutputSlot, FWorkerTaskComplete());
+			TickWorker(Worker, 100, 0.05f, [&]() { return bFired; });
+
+			TestTrue(TEXT("OnPlaced fired"), bFired);
+			TestEqual(TEXT("station type passed"), static_cast<int32>(Captured), static_cast<int32>(EStationType::Sorter));
+		});
+	});
+
 	Describe("ApplyTint", [this]()
 	{
 		It("creates a UMaterialInstanceDynamic at material 0 on every composite body part", [this]()

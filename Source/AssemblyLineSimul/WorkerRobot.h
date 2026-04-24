@@ -28,6 +28,7 @@ enum class EWorkerState : uint8
 };
 
 DECLARE_DELEGATE_OneParam(FWorkerTaskComplete, ABucket* /*Bucket*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnWorkerPhase, EStationType /*StationType*/);
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API AWorkerRobot : public APawn
@@ -91,6 +92,12 @@ public:
 	// Result of the most recent ProcessBucket call (read by the Director after task completes).
 	UPROPERTY(BlueprintReadOnly, Category = "Robot")
 	FStationProcessResult LastResult;
+
+	// Fires when this worker enters the PickUp state, with the station's type as payload.
+	FOnWorkerPhase OnPickedUp;
+
+	// Fires when this worker enters the Place state, with the station's type as payload.
+	FOnWorkerPhase OnPlaced;
 
 	void AssignStation(AStation* Station);
 

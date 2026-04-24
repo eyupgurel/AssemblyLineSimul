@@ -168,6 +168,7 @@ void AWorkerRobot::EnterState(EWorkerState NewState)
 		break;
 	case EWorkerState::PickUp:
 		AttachBucket();
+		if (AssignedStation) OnPickedUp.Broadcast(AssignedStation->StationType);
 		EnterState(EWorkerState::MoveToWorkPos);
 		return;
 	case EWorkerState::MoveToWorkPos:
@@ -185,6 +186,7 @@ void AWorkerRobot::EnterState(EWorkerState NewState)
 		break;
 	case EWorkerState::Place:
 		if (ToSlotPtr.IsValid()) DetachBucketAt(ToSlotPtr.Get());
+		if (AssignedStation) OnPlaced.Broadcast(AssignedStation->StationType);
 		EnterState(EWorkerState::ReturnHome);
 		return;
 	case EWorkerState::ReturnHome:

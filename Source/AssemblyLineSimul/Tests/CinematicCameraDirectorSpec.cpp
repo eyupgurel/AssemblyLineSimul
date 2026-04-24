@@ -133,6 +133,43 @@ void FCinematicCameraDirectorSpec::Define()
 				CinDirector->GetCurrentShotIndex(), CinDirector->CheckerShotIndex);
 		});
 
+		It("jumps to StationCloseupShotIndex[N] when Director broadcasts OnStationActive(N)", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinematicSpec_StationActive"));
+			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			TestNotNull(TEXT("AssemblyLineDirector subsystem"), AsmDirector);
+			if (!AsmDirector) return;
+
+			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
+			CinDirector->StationCloseupShotIndex.Add(EStationType::Sorter, 3);
+			CinDirector->ResumeShotIndex = 0;
+			CinDirector->BindToAssemblyLine(AsmDirector);
+
+			AsmDirector->OnStationActive.Broadcast(EStationType::Sorter);
+
+			TestEqual(TEXT("jumped to mapped shot"),
+				CinDirector->GetCurrentShotIndex(), 3);
+		});
+
+		It("returns to ResumeShotIndex when Director broadcasts OnStationIdle(N)", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinematicSpec_StationIdle"));
+			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			TestNotNull(TEXT("AssemblyLineDirector subsystem"), AsmDirector);
+			if (!AsmDirector) return;
+
+			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
+			CinDirector->StationCloseupShotIndex.Add(EStationType::Sorter, 3);
+			CinDirector->ResumeShotIndex = 1;  // distinct from initial 0 to discriminate
+			CinDirector->BindToAssemblyLine(AsmDirector);
+
+			AsmDirector->OnStationActive.Broadcast(EStationType::Sorter);
+			AsmDirector->OnStationIdle.Broadcast(EStationType::Sorter);
+
+			TestEqual(TEXT("returned to ResumeShotIndex"),
+				CinDirector->GetCurrentShotIndex(), CinDirector->ResumeShotIndex);
+		});
+
 		It("returns to ResumeShotIndex when AssemblyLineDirector broadcasts OnCycleCompleted", [this]()
 		{
 			FScopedTestWorld TW(TEXT("CinematicSpec_Resume"));
