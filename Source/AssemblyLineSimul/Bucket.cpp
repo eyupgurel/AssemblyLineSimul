@@ -10,14 +10,16 @@
 namespace
 {
 	// Crate inner extents (cm) — balls live inside, edges trace the perimeter.
-	constexpr float CrateHalfX = 30.f;
-	constexpr float CrateHalfY = 30.f;
-	constexpr float CrateHalfZ = 20.f;
+	constexpr float CrateHalfX = 60.f;
+	constexpr float CrateHalfY = 40.f;
+	constexpr float CrateHalfZ = 30.f;
+	constexpr float EdgeThicknessScale = 0.07f;  // cylinder XY scale
 
 	constexpr int32 BallGridCols = 5;
-	constexpr float BallSpacing  = 12.f;
-	constexpr float BallScale    = 0.10f;
-	constexpr float LabelSize    = 12.f;
+	constexpr float BallSpacing  = 22.f;
+	constexpr float BallScale    = 0.20f;
+	constexpr float LabelSize    = 35.f;
+	constexpr float LabelOffsetZ = 150.f;  // in ball-local space; world Z = LabelOffsetZ * BallScale
 }
 
 ABucket::ABucket()
@@ -33,9 +35,9 @@ ABucket::ABucket()
 	if (CubeFinder.Succeeded())
 	{
 		MeshComponent->SetStaticMesh(CubeFinder.Object);
-		MeshComponent->SetWorldScale3D(FVector(0.6f, 0.6f, 0.4f));
 	}
 	MeshComponent->SetVisibility(false);  // hidden — wireframe edges replace it
+	// Root scale stays at (1,1,1) so crate edges and balls render in raw cm units.
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(
 		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
@@ -48,23 +50,23 @@ ABucket::ABucket()
 	// 12 crate edges: 4 vertical posts + 4 top + 4 bottom horizontals.
 	// Cylinders are 100 cm tall along Z by default; we scale + rotate per edge.
 	struct FEdgeSpec { FVector Loc; FRotator Rot; FVector Scale; };
-	const float ThinR = 0.05f;
+	const float T = EdgeThicknessScale;
 	const FEdgeSpec Specs[12] = {
-		// Verticals (4): X axis aligned with Z, scale Z to height
-		{ FVector( CrateHalfX,  CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(ThinR, ThinR, CrateHalfZ * 2.f / 100.f) },
-		{ FVector( CrateHalfX, -CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(ThinR, ThinR, CrateHalfZ * 2.f / 100.f) },
-		{ FVector(-CrateHalfX,  CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(ThinR, ThinR, CrateHalfZ * 2.f / 100.f) },
-		{ FVector(-CrateHalfX, -CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(ThinR, ThinR, CrateHalfZ * 2.f / 100.f) },
-		// Top horizontals (4): rotate cylinder to lie along X or Y
-		{ FVector(0.f,  CrateHalfY,  CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(ThinR, ThinR, CrateHalfX * 2.f / 100.f) },
-		{ FVector(0.f, -CrateHalfY,  CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(ThinR, ThinR, CrateHalfX * 2.f / 100.f) },
-		{ FVector( CrateHalfX, 0.f,  CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(ThinR, ThinR, CrateHalfY * 2.f / 100.f) },
-		{ FVector(-CrateHalfX, 0.f,  CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(ThinR, ThinR, CrateHalfY * 2.f / 100.f) },
+		// Verticals (4)
+		{ FVector( CrateHalfX,  CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(T, T, CrateHalfZ * 2.f / 100.f) },
+		{ FVector( CrateHalfX, -CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(T, T, CrateHalfZ * 2.f / 100.f) },
+		{ FVector(-CrateHalfX,  CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(T, T, CrateHalfZ * 2.f / 100.f) },
+		{ FVector(-CrateHalfX, -CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(T, T, CrateHalfZ * 2.f / 100.f) },
+		// Top horizontals (4)
+		{ FVector(0.f,  CrateHalfY,  CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(T, T, CrateHalfX * 2.f / 100.f) },
+		{ FVector(0.f, -CrateHalfY,  CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(T, T, CrateHalfX * 2.f / 100.f) },
+		{ FVector( CrateHalfX, 0.f,  CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(T, T, CrateHalfY * 2.f / 100.f) },
+		{ FVector(-CrateHalfX, 0.f,  CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(T, T, CrateHalfY * 2.f / 100.f) },
 		// Bottom horizontals (4)
-		{ FVector(0.f,  CrateHalfY, -CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(ThinR, ThinR, CrateHalfX * 2.f / 100.f) },
-		{ FVector(0.f, -CrateHalfY, -CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(ThinR, ThinR, CrateHalfX * 2.f / 100.f) },
-		{ FVector( CrateHalfX, 0.f, -CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(ThinR, ThinR, CrateHalfY * 2.f / 100.f) },
-		{ FVector(-CrateHalfX, 0.f, -CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(ThinR, ThinR, CrateHalfY * 2.f / 100.f) },
+		{ FVector(0.f,  CrateHalfY, -CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(T, T, CrateHalfX * 2.f / 100.f) },
+		{ FVector(0.f, -CrateHalfY, -CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(T, T, CrateHalfX * 2.f / 100.f) },
+		{ FVector( CrateHalfX, 0.f, -CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(T, T, CrateHalfY * 2.f / 100.f) },
+		{ FVector(-CrateHalfX, 0.f, -CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(T, T, CrateHalfY * 2.f / 100.f) },
 	};
 
 	for (int32 i = 0; i < 12; ++i)
@@ -170,9 +172,9 @@ void ABucket::RefreshContents()
 		const FName LabelName = *FString::Printf(TEXT("NumberBallLabel_%d"), i);
 		UTextRenderComponent* Label = NewObject<UTextRenderComponent>(this, LabelName);
 		Label->SetupAttachment(Ball);
-		// World-size scales with parent — undo the small ball scale so text is readable.
+		// Undo the ball's local scale so text renders at world-cm units.
 		Label->SetRelativeScale3D(FVector(1.f / BallScale));
-		Label->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
+		Label->SetRelativeLocation(FVector(0.f, 0.f, LabelOffsetZ));
 		Label->SetHorizontalAlignment(EHTA_Center);
 		Label->SetVerticalAlignment(EVRTA_TextCenter);
 		Label->SetWorldSize(LabelSize);
