@@ -1,9 +1,11 @@
 #include "Station.h"
 #include "Bucket.h"
+#include "StationTalkWidget.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Components/WidgetComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
@@ -47,14 +49,14 @@ AStation::AStation()
 	NameLabel->SetWorldSize(80.f);
 	NameLabel->SetTextRenderColor(FColor::Cyan);
 
-	TalkPanel = CreateDefaultSubobject<UTextRenderComponent>(TEXT("TalkPanel"));
-	TalkPanel->SetupAttachment(RootComponent);
-	TalkPanel->SetRelativeLocation(FVector(0.f, 0.f, 380.f));
-	TalkPanel->SetHorizontalAlignment(EHTA_Center);
-	TalkPanel->SetVerticalAlignment(EVRTA_TextCenter);
-	TalkPanel->SetWorldSize(45.f);
-	TalkPanel->SetTextRenderColor(FColor(120, 220, 255));
-	TalkPanel->SetText(FText::GetEmpty());
+	TalkWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("TalkWidgetComponent"));
+	TalkWidgetComponent->SetupAttachment(RootComponent);
+	TalkWidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 380.f));
+	TalkWidgetComponent->SetWidgetSpace(EWidgetSpace::World);
+	TalkWidgetComponent->SetDrawSize(FVector2D(800.f, 200.f));
+	TalkWidgetComponent->SetPivot(FVector2D(0.5f, 0.5f));
+	TalkWidgetComponent->SetTwoSided(true);
+	TalkWidgetComponent->SetWidgetClass(UStationTalkWidget::StaticClass());
 }
 
 void AStation::BeginPlay()
@@ -70,7 +72,7 @@ void AStation::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	BillboardLabel(NameLabel);
-	BillboardLabel(TalkPanel);
+	BillboardLabel(TalkWidgetComponent);
 }
 
 void AStation::BillboardLabel(USceneComponent* Comp)
@@ -82,9 +84,21 @@ void AStation::BillboardLabel(USceneComponent* Comp)
 	FRotator LookAt = (CamLoc - Comp->GetComponentLocation()).Rotation();
 	LookAt.Pitch = 0.f;
 	LookAt.Roll = 0.f;
-	// TextRender's readable face points along its local +X, so add 180° so text faces *toward* the camera.
+	// TextRender / world-space widget readable face points along local +X — flip 180° to face the camera.
 	LookAt.Yaw += 180.f;
 	Comp->SetWorldRotation(LookAt);
+}
+
+UStationTalkWidget* AStation::GetTalkWidget()
+{
+	if (!TalkWidgetComponent) return nullptr;
+	if (UStationTalkWidget* Existing = Cast<UStationTalkWidget>(TalkWidgetComponent->GetUserWidgetObject()))
+	{
+		return Existing;
+	}
+	UStationTalkWidget* New = NewObject<UStationTalkWidget>(this, UStationTalkWidget::StaticClass());
+	TalkWidgetComponent->SetWidget(New);
+	return New;
 }
 
 void AStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
@@ -92,6 +106,14 @@ void AStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete
 	FStationProcessResult Result;
 	Result.bAccepted = true;
 	OnComplete.ExecuteIfBound(Result);
+}
+
+void AStation::WriteTalkText(const FString& Text)
+{
+	if (UStationTalkWidget* W = GetTalkWidget())
+	{
+		W->SetBody(FText::FromString(Text));
+	}
 }
 
 void AStation::Speak(const FString& Text)
@@ -102,14 +124,14 @@ void AStation::Speak(const FString& Text)
 	}
 	StreamFullText.Empty();
 	StreamCharIndex = 0;
-	if (TalkPanel) TalkPanel->SetText(FText::FromString(Text));
+	WriteTalkText(Text);
 }
 
 void AStation::SpeakStreaming(const FString& Text, float CharsPerSecond)
 {
 	StreamFullText = Text;
 	StreamCharIndex = 0;
-	if (TalkPanel) TalkPanel->SetText(FText::GetEmpty());
+	WriteTalkText(FString());
 	if (UWorld* W = GetWorld())
 	{
 		W->GetTimerManager().ClearTimer(StreamTimer);
@@ -126,7 +148,7 @@ void AStation::ClearTalk()
 	}
 	StreamFullText.Empty();
 	StreamCharIndex = 0;
-	if (TalkPanel) TalkPanel->SetText(FText::GetEmpty());
+	WriteTalkText(FString());
 }
 
 void AStation::TickStream()
@@ -137,5 +159,5 @@ void AStation::TickStream()
 		return;
 	}
 	StreamCharIndex = FMath::Min(StreamCharIndex + 1, StreamFullText.Len());
-	if (TalkPanel) TalkPanel->SetText(FText::FromString(StreamFullText.Left(StreamCharIndex)));
+	WriteTalkText(StreamFullText.Left(StreamCharIndex));
 }

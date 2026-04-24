@@ -9,6 +9,8 @@ class ABucket;
 class UStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
+class UWidgetComponent;
+class UStationTalkWidget;
 
 UCLASS(Abstract)
 class ASSEMBLYLINESIMUL_API AStation : public AActor
@@ -36,10 +38,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Station")
 	TObjectPtr<UTextRenderComponent> NameLabel;
 
-	// Big multi-line panel positioned above the station — used for surfacing
-	// the agent's current thoughts (and especially the checker's streaming LLM verdict).
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Station")
-	TObjectPtr<UTextRenderComponent> TalkPanel;
+	// In-world UMG panel surfacing the agent's current thoughts (e.g. checker's streaming LLM verdict).
+	UPROPERTY(VisibleAnywhere, Category = "Station")
+	TObjectPtr<UWidgetComponent> TalkWidgetComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Station")
 	EStationType StationType = EStationType::Generator;
@@ -64,6 +65,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Station")
 	void ClearTalk();
 
+	// Returns the UMG widget instance hosted by TalkWidgetComponent, lazily creating it on first call.
+	UStationTalkWidget* GetTalkWidget();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -74,4 +78,5 @@ private:
 	FTimerHandle StreamTimer;
 	void TickStream();
 	void BillboardLabel(USceneComponent* Comp);
+	void WriteTalkText(const FString& Text);
 };
