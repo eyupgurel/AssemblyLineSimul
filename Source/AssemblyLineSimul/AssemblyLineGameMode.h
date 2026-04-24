@@ -43,6 +43,9 @@ public:
 	// Public so tests can verify spawn without the full BeginPlay path.
 	void SpawnCinematicDirector();
 
+	// Spawns an AAssemblyLineFeedback actor that flashes lights on Checker accept/reject.
+	void SpawnFeedback();
+
 protected:
 	virtual void BeginPlay() override;
 };

@@ -1,5 +1,6 @@
 #include "AssemblyLineGameMode.h"
 #include "AssemblyLineDirector.h"
+#include "AssemblyLineFeedback.h"
 #include "CinematicCameraDirector.h"
 #include "Station.h"
 #include "StationSubclasses.h"
@@ -105,6 +106,23 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 	Cinematic->Start();
 }
 
+void AAssemblyLineGameMode::SpawnFeedback()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
+	if (!Director) return;
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AAssemblyLineFeedback* Feedback = World->SpawnActor<AAssemblyLineFeedback>(
+		AAssemblyLineFeedback::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+	if (Feedback)
+	{
+		Feedback->BindToAssemblyLine(Director);
+	}
+}
+
 void AAssemblyLineGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -120,6 +138,7 @@ void AAssemblyLineGameMode::BeginPlay()
 
 	SpawnAssemblyLine();
 	SpawnCinematicDirector();
+	SpawnFeedback();
 
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return;
