@@ -3,6 +3,7 @@
 #include "CinematicCameraDirector.h"
 #include "Station.h"
 #include "StationSubclasses.h"
+#include "StationTalkWidget.h"
 #include "WorkerRobot.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
@@ -37,6 +38,10 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 		const FVector Loc = LineOrigin + FVector((float)i * StationSpacing, 0.f, 0.f);
 		AStation* Station = World->SpawnActor<AStation>(Specs[i], Loc, FRotator::ZeroRotator, Params);
 		if (!Station) continue;
+		if (StationTalkWidgetClass)
+		{
+			Station->TalkWidgetClass = StationTalkWidgetClass;
+		}
 		Director->RegisterStation(Station);
 
 		const FVector RobotLoc = Station->WorkerStandPoint

@@ -6,6 +6,7 @@
 #include "AssemblyLineGameMode.generated.h"
 
 class USkeletalMesh;
+class UStationTalkWidget;
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API AAssemblyLineGameMode : public AGameModeBase
@@ -29,6 +30,10 @@ public:
 	// Per-station tint applied to the worker's body material.
 	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
 	TMap<EStationType, FLinearColor> RobotTintByStation;
+
+	// UMG widget class assigned to every spawned station's TalkWidgetClass.
+	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
+	TSubclassOf<UStationTalkWidget> StationTalkWidgetClass;
 
 	// Spawns 4 stations + 4 workers + cinematic camera and registers them with the Director.
 	// Public so tests can drive without running the full BeginPlay path.

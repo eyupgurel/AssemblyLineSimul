@@ -6,6 +6,7 @@
 #include "Station.h"
 #include "StationSubclasses.h"
 #include "StationTalkWidget.h"
+#include "TestStations.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -78,6 +79,22 @@ void FStationSpec::Define()
 			{
 				TestEqual(TEXT("body text equals Speak argument"), W->GetBody().ToString(), FString(TEXT("hello")));
 			}
+		});
+
+		It("uses TalkWidgetClass when constructing the widget instance", [this]()
+		{
+			FScopedTestWorld TW(TEXT("StationSpec_TalkWidget_DerivedClass"));
+			AStation* Station = SpawnStation(TW.World);
+
+			TestEqual(TEXT("default TalkWidgetClass is UStationTalkWidget"),
+				Station->TalkWidgetClass.Get(), UStationTalkWidget::StaticClass());
+
+			Station->TalkWidgetClass = UTestDerivedTalkWidget::StaticClass();
+
+			UStationTalkWidget* W = Station->GetTalkWidget();
+			TestNotNull(TEXT("widget present"), W);
+			TestTrue(TEXT("widget is the configured derived class"),
+				W && W->IsA<UTestDerivedTalkWidget>());
 		});
 	});
 }

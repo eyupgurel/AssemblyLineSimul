@@ -2,7 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "Station.h"
+#include "StationTalkWidget.h"
 #include "TestStations.generated.h"
+
+UCLASS(NotBlueprintable, NotPlaceable, HideDropdown)
+class UTestDerivedTalkWidget : public UStationTalkWidget
+{
+	GENERATED_BODY()
+};
 
 // Fires the completion delegate inside the call.
 UCLASS(NotBlueprintable, NotPlaceable, HideDropdown)

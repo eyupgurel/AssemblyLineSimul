@@ -57,6 +57,7 @@ AStation::AStation()
 	TalkWidgetComponent->SetPivot(FVector2D(0.5f, 0.5f));
 	TalkWidgetComponent->SetTwoSided(true);
 	TalkWidgetComponent->SetWidgetClass(UStationTalkWidget::StaticClass());
+	TalkWidgetClass = UStationTalkWidget::StaticClass();
 }
 
 void AStation::BeginPlay()
@@ -96,7 +97,8 @@ UStationTalkWidget* AStation::GetTalkWidget()
 	{
 		return Existing;
 	}
-	UStationTalkWidget* New = NewObject<UStationTalkWidget>(this, UStationTalkWidget::StaticClass());
+	UClass* WidgetClass = TalkWidgetClass ? TalkWidgetClass.Get() : UStationTalkWidget::StaticClass();
+	UStationTalkWidget* New = NewObject<UStationTalkWidget>(this, WidgetClass);
 	TalkWidgetComponent->SetWidget(New);
 	return New;
 }

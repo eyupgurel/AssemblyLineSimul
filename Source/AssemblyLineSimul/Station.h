@@ -42,6 +42,10 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Station")
 	TObjectPtr<UWidgetComponent> TalkWidgetComponent;
 
+	// Widget class used to construct the talk panel. Override with a Blueprint subclass for styling.
+	UPROPERTY(EditAnywhere, Category = "Station")
+	TSubclassOf<UStationTalkWidget> TalkWidgetClass;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Station")
 	EStationType StationType = EStationType::Generator;
 
