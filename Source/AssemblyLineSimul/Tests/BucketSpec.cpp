@@ -1,0 +1,123 @@
+#include "CoreMinimal.h"
+#include "Misc/AutomationTest.h"
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+#include "Bucket.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/TextRenderComponent.h"
+#include "Engine/Engine.h"
+#include "Engine/World.h"
+
+namespace AssemblyLineBucketTests
+{
+	struct FScopedTestWorld
+	{
+		UWorld* World = nullptr;
+
+		FScopedTestWorld(const TCHAR* Name)
+		{
+			World = UWorld::CreateWorld(EWorldType::Game, false, FName(Name));
+			FWorldContext& Ctx = GEngine->CreateNewWorldContext(EWorldType::Game);
+			Ctx.SetCurrentWorld(World);
+			FURL URL;
+			World->InitializeActorsForPlay(URL);
+			World->BeginPlay();
+		}
+
+		~FScopedTestWorld()
+		{
+			if (World)
+			{
+				World->BeginTearingDown();
+				GEngine->DestroyWorldContext(World);
+				World->DestroyWorld(false);
+			}
+		}
+	};
+
+	static ABucket* SpawnBucket(UWorld* World)
+	{
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		return World->SpawnActor<ABucket>(
+			ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+	}
+}
+
+DEFINE_SPEC(FBucketSpec,
+	"AssemblyLineSimul.Bucket",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+void FBucketSpec::Define()
+{
+	using namespace AssemblyLineBucketTests;
+
+	Describe("Construction", [this]()
+	{
+		It("hides the legacy cube and exposes 12 wireframe crate edges", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_Construct"));
+			ABucket* Bucket = SpawnBucket(TW.World);
+			TestNotNull(TEXT("bucket spawned"), Bucket);
+			if (!Bucket) return;
+
+			TestFalse(TEXT("legacy cube hidden"), Bucket->MeshComponent->IsVisible());
+			TestEqual(TEXT("12 crate edges"), Bucket->CrateEdges.Num(), 12);
+		});
+	});
+
+	Describe("RefreshContents", [this]()
+	{
+		It("creates one number ball per Contents entry with the right text", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_Refresh"));
+			ABucket* Bucket = SpawnBucket(TW.World);
+			if (!Bucket) return;
+
+			Bucket->Contents = { 3, 5, 7 };
+			Bucket->RefreshContents();
+
+			TestEqual(TEXT("ball count"), Bucket->NumberBalls.Num(), 3);
+			TestEqual(TEXT("label count"), Bucket->NumberBallLabels.Num(), 3);
+			if (Bucket->NumberBallLabels.Num() == 3)
+			{
+				TestEqual(TEXT("label 0"), Bucket->NumberBallLabels[0]->Text.ToString(), FString(TEXT("3")));
+				TestEqual(TEXT("label 1"), Bucket->NumberBallLabels[1]->Text.ToString(), FString(TEXT("5")));
+				TestEqual(TEXT("label 2"), Bucket->NumberBallLabels[2]->Text.ToString(), FString(TEXT("7")));
+			}
+		});
+
+		It("clears the visualization when Contents is empty", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_Empty"));
+			ABucket* Bucket = SpawnBucket(TW.World);
+			if (!Bucket) return;
+
+			Bucket->Contents = { 1, 2 };
+			Bucket->RefreshContents();
+			Bucket->Contents.Reset();
+			Bucket->RefreshContents();
+
+			TestEqual(TEXT("no balls after empty refresh"), Bucket->NumberBalls.Num(), 0);
+			TestEqual(TEXT("no labels after empty refresh"), Bucket->NumberBallLabels.Num(), 0);
+		});
+
+		It("rebuilds without leaking when called twice", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_Rebuild"));
+			ABucket* Bucket = SpawnBucket(TW.World);
+			if (!Bucket) return;
+
+			Bucket->Contents = { 11, 13, 17, 19, 23 };
+			Bucket->RefreshContents();
+			Bucket->Contents = { 2, 3 };
+			Bucket->RefreshContents();
+
+			TestEqual(TEXT("ball count matches latest Contents"), Bucket->NumberBalls.Num(), 2);
+			TestEqual(TEXT("label count matches latest Contents"), Bucket->NumberBallLabels.Num(), 2);
+		});
+	});
+}
+
+#endif // WITH_DEV_AUTOMATION_TESTS

@@ -44,7 +44,7 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 	{
 		Bucket->Contents.Add(FMath::RandRange(MinValue, MaxValue));
 	}
-	Bucket->RefreshLabel();
+	Bucket->RefreshContents();
 	SpeakStreaming(FString::Printf(TEXT("Generated %d random numbers in [%d, %d]"),
 		BucketSize, MinValue, MaxValue));
 
@@ -84,7 +84,7 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 	}
 	const int32 KeptCount = Filtered.Num();
 	Bucket->Contents = MoveTemp(Filtered);
-	Bucket->RefreshLabel();
+	Bucket->RefreshContents();
 	SpeakStreaming(FString::Printf(TEXT("Kept %d primes"), KeptCount));
 
 	FStationProcessResult R; R.bAccepted = true;
@@ -117,7 +117,7 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 		const int32 Idx = FMath::RandRange(0, Bucket->Contents.Num() - 2);
 		Bucket->Contents.Swap(Idx, Idx + 1);
 	}
-	Bucket->RefreshLabel();
+	Bucket->RefreshContents();
 	SpeakStreaming(TEXT("Sorted ascending"));
 
 	FStationProcessResult R; R.bAccepted = true;
