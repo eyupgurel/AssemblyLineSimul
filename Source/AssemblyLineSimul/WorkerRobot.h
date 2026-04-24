@@ -50,6 +50,25 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Robot")
 	TObjectPtr<USkeletalMeshComponent> SkeletalBodyMesh;
 
+	// Composite mech-style body assembled from engine BasicShape meshes; visible by default.
+	UPROPERTY(VisibleAnywhere, Category = "Robot|Body")
+	TObjectPtr<UStaticMeshComponent> Torso;
+
+	UPROPERTY(VisibleAnywhere, Category = "Robot|Body")
+	TObjectPtr<UStaticMeshComponent> HeadDome;
+
+	UPROPERTY(VisibleAnywhere, Category = "Robot|Body")
+	TObjectPtr<UStaticMeshComponent> Eye;
+
+	UPROPERTY(VisibleAnywhere, Category = "Robot|Body")
+	TObjectPtr<UStaticMeshComponent> LeftArm;
+
+	UPROPERTY(VisibleAnywhere, Category = "Robot|Body")
+	TObjectPtr<UStaticMeshComponent> RightArm;
+
+	UPROPERTY(VisibleAnywhere, Category = "Robot|Body")
+	TObjectPtr<UStaticMeshComponent> Antenna;
+
 	// Asset to load via LoadAndApplyBodyMesh; the GameMode propagates its WorkerRobotMeshAsset here.
 	UPROPERTY()
 	TSoftObjectPtr<USkeletalMesh> BodyMeshAsset;

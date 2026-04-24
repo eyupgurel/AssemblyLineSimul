@@ -14,6 +14,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/WorldSettings.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 namespace AssemblyLineSimulTests
 {
@@ -90,18 +91,33 @@ void FWorkerRobotSpec::Define()
 
 	Describe("BodyMesh", [this]()
 	{
-		It("constructs with SkeletalBodyMesh hidden and placeholder primitives visible", [this]()
+		It("constructs with SkeletalBodyMesh hidden, composite robot parts visible, legacy primitives hidden", [this]()
 		{
 			FScopedTestWorld TW(TEXT("WorkerRobotSpec_BodyMesh_Default"));
 			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
 
 			TestNotNull(TEXT("SkeletalBodyMesh exists"), Worker->SkeletalBodyMesh.Get());
 			TestFalse(TEXT("SkeletalBodyMesh hidden by default"), Worker->SkeletalBodyMesh->IsVisible());
-			TestTrue(TEXT("Placeholder body visible by default"), Worker->BodyMesh->IsVisible());
-			TestTrue(TEXT("Placeholder head visible by default"), Worker->HeadMesh->IsVisible());
+
+			TestNotNull(TEXT("Torso exists"),    Worker->Torso.Get());
+			TestNotNull(TEXT("HeadDome exists"), Worker->HeadDome.Get());
+			TestNotNull(TEXT("Eye exists"),      Worker->Eye.Get());
+			TestNotNull(TEXT("LeftArm exists"),  Worker->LeftArm.Get());
+			TestNotNull(TEXT("RightArm exists"), Worker->RightArm.Get());
+			TestNotNull(TEXT("Antenna exists"),  Worker->Antenna.Get());
+
+			TestTrue(TEXT("Torso visible"),    Worker->Torso->IsVisible());
+			TestTrue(TEXT("HeadDome visible"), Worker->HeadDome->IsVisible());
+			TestTrue(TEXT("Eye visible"),      Worker->Eye->IsVisible());
+			TestTrue(TEXT("LeftArm visible"),  Worker->LeftArm->IsVisible());
+			TestTrue(TEXT("RightArm visible"), Worker->RightArm->IsVisible());
+			TestTrue(TEXT("Antenna visible"),  Worker->Antenna->IsVisible());
+
+			TestFalse(TEXT("Legacy BodyMesh hidden"), Worker->BodyMesh->IsVisible());
+			TestFalse(TEXT("Legacy HeadMesh hidden"), Worker->HeadMesh->IsVisible());
 		});
 
-		It("ApplyBodyMesh assigns the mesh and hides the placeholder primitives", [this]()
+		It("ApplyBodyMesh assigns the mesh and hides every composite + legacy primitive", [this]()
 		{
 			FScopedTestWorld TW(TEXT("WorkerRobotSpec_BodyMesh_Apply"));
 			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
@@ -112,11 +128,19 @@ void FWorkerRobotSpec::Define()
 			TestEqual(TEXT("SkeletalBodyMesh holds assigned mesh"),
 				Worker->SkeletalBodyMesh->GetSkeletalMeshAsset(), TestMesh);
 			TestTrue(TEXT("SkeletalBodyMesh visible after apply"), Worker->SkeletalBodyMesh->IsVisible());
-			TestFalse(TEXT("Placeholder body hidden after apply"), Worker->BodyMesh->IsVisible());
-			TestFalse(TEXT("Placeholder head hidden after apply"), Worker->HeadMesh->IsVisible());
+
+			TestFalse(TEXT("Torso hidden after apply"),    Worker->Torso->IsVisible());
+			TestFalse(TEXT("HeadDome hidden after apply"), Worker->HeadDome->IsVisible());
+			TestFalse(TEXT("Eye hidden after apply"),      Worker->Eye->IsVisible());
+			TestFalse(TEXT("LeftArm hidden after apply"),  Worker->LeftArm->IsVisible());
+			TestFalse(TEXT("RightArm hidden after apply"), Worker->RightArm->IsVisible());
+			TestFalse(TEXT("Antenna hidden after apply"),  Worker->Antenna->IsVisible());
+
+			TestFalse(TEXT("Legacy BodyMesh hidden after apply"), Worker->BodyMesh->IsVisible());
+			TestFalse(TEXT("Legacy HeadMesh hidden after apply"), Worker->HeadMesh->IsVisible());
 		});
 
-		It("ApplyBodyMesh(nullptr) is a no-op and leaves the placeholder visible", [this]()
+		It("ApplyBodyMesh(nullptr) is a no-op and leaves the composite parts visible", [this]()
 		{
 			FScopedTestWorld TW(TEXT("WorkerRobotSpec_BodyMesh_Null"));
 			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
@@ -125,7 +149,32 @@ void FWorkerRobotSpec::Define()
 
 			TestNull(TEXT("SkeletalBodyMesh remains empty"), Worker->SkeletalBodyMesh->GetSkeletalMeshAsset());
 			TestFalse(TEXT("SkeletalBodyMesh stays hidden"), Worker->SkeletalBodyMesh->IsVisible());
-			TestTrue(TEXT("Placeholder body still visible"), Worker->BodyMesh->IsVisible());
+			TestTrue(TEXT("Torso still visible"),    Worker->Torso->IsVisible());
+			TestTrue(TEXT("HeadDome still visible"), Worker->HeadDome->IsVisible());
+		});
+	});
+
+	Describe("ApplyTint", [this]()
+	{
+		It("creates a UMaterialInstanceDynamic at material 0 on every composite body part", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_Tint_Composite"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+
+			Worker->ApplyTint(FLinearColor::Red);
+
+			auto AssertMID = [this](const TCHAR* Name, UStaticMeshComponent* Comp)
+			{
+				if (!Comp) { AddError(FString::Printf(TEXT("%s null"), Name)); return; }
+				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Comp->GetMaterial(0));
+				TestNotNull(*FString::Printf(TEXT("%s has MID at material 0"), Name), MID);
+			};
+			AssertMID(TEXT("Torso"),    Worker->Torso);
+			AssertMID(TEXT("HeadDome"), Worker->HeadDome);
+			AssertMID(TEXT("Eye"),      Worker->Eye);
+			AssertMID(TEXT("LeftArm"),  Worker->LeftArm);
+			AssertMID(TEXT("RightArm"), Worker->RightArm);
+			AssertMID(TEXT("Antenna"),  Worker->Antenna);
 		});
 	});
 

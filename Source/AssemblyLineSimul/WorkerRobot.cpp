@@ -43,6 +43,33 @@ AWorkerRobot::AWorkerRobot()
 	SkeletalBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SkeletalBodyMesh->SetVisibility(false);  // hidden until ApplyBodyMesh receives a mesh
 
+	// Composite robot body — these REPLACE the legacy BodyMesh+HeadMesh visually.
+	auto MakePart = [this](const TCHAR* Name, UStaticMesh* Mesh, FVector Loc, FVector Scale)
+	{
+		UStaticMeshComponent* C = CreateDefaultSubobject<UStaticMeshComponent>(Name);
+		C->SetupAttachment(RootComponent);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetRelativeLocation(Loc);
+		C->SetRelativeScale3D(Scale);
+		if (Mesh) C->SetStaticMesh(Mesh);
+		return C;
+	};
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(
+		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	UStaticMesh* CylinderMesh = CylinderFinder.Succeeded() ? CylinderFinder.Object : nullptr;
+
+	Torso    = MakePart(TEXT("Torso"),    CylinderMesh,                  FVector(0.f,   0.f,  -45.f), FVector(0.6f, 0.6f, 0.8f));
+	HeadDome = MakePart(TEXT("HeadDome"), SphereFinder.Object,           FVector(0.f,   0.f,   25.f), FVector(0.5f, 0.5f, 0.5f));
+	Eye      = MakePart(TEXT("Eye"),      SphereFinder.Object,           FVector(25.f,  0.f,   30.f), FVector(0.18f, 0.12f, 0.18f));
+	LeftArm  = MakePart(TEXT("LeftArm"),  CylinderMesh,                  FVector(0.f, -45.f,  -30.f), FVector(0.18f, 0.18f, 0.7f));
+	RightArm = MakePart(TEXT("RightArm"), CylinderMesh,                  FVector(0.f,  45.f,  -30.f), FVector(0.18f, 0.18f, 0.7f));
+	Antenna  = MakePart(TEXT("Antenna"),  CylinderMesh,                  FVector(0.f,   0.f,   65.f), FVector(0.04f, 0.04f, 0.3f));
+
+	// Legacy primitives become hidden fallback — kept so older tests / API stay valid.
+	BodyMesh->SetVisibility(false);
+	HeadMesh->SetVisibility(false);
+
 	CarrySocket = CreateDefaultSubobject<USceneComponent>(TEXT("CarrySocket"));
 	CarrySocket->SetupAttachment(RootComponent);
 	CarrySocket->SetRelativeLocation(FVector(60.f, 0.f, 0.f));
@@ -62,8 +89,14 @@ void AWorkerRobot::ApplyBodyMesh(USkeletalMesh* ResolvedMesh)
 	if (!ResolvedMesh || !SkeletalBodyMesh) return;
 	SkeletalBodyMesh->SetSkeletalMeshAsset(ResolvedMesh);
 	SkeletalBodyMesh->SetVisibility(true);
-	if (BodyMesh) BodyMesh->SetVisibility(false);
-	if (HeadMesh) HeadMesh->SetVisibility(false);
+
+	const TArray<UStaticMeshComponent*> AllPrimitives = {
+		Torso, HeadDome, Eye, LeftArm, RightArm, Antenna, BodyMesh, HeadMesh
+	};
+	for (UStaticMeshComponent* Part : AllPrimitives)
+	{
+		if (Part) Part->SetVisibility(false);
+	}
 }
 
 void AWorkerRobot::LoadAndApplyBodyMesh()
@@ -74,18 +107,29 @@ void AWorkerRobot::LoadAndApplyBodyMesh()
 
 void AWorkerRobot::ApplyTint(const FLinearColor& Color)
 {
-	UMeshComponent* Active = (SkeletalBodyMesh && SkeletalBodyMesh->IsVisible())
-		? static_cast<UMeshComponent*>(SkeletalBodyMesh.Get())
-		: static_cast<UMeshComponent*>(BodyMesh.Get());
-	if (!Active) return;
-
-	const int32 NumMaterials = Active->GetNumMaterials();
-	for (int32 i = 0; i < NumMaterials; ++i)
+	auto TintComponent = [&Color](UMeshComponent* Comp)
 	{
-		if (UMaterialInstanceDynamic* MID = Active->CreateAndSetMaterialInstanceDynamic(i))
+		if (!Comp) return;
+		const int32 NumMaterials = Comp->GetNumMaterials();
+		for (int32 i = 0; i < NumMaterials; ++i)
 		{
-			MID->SetVectorParameterValue(TEXT("BodyTint"), Color);
+			if (UMaterialInstanceDynamic* MID = Comp->CreateAndSetMaterialInstanceDynamic(i))
+			{
+				MID->SetVectorParameterValue(TEXT("BodyTint"), Color);
+			}
 		}
+	};
+
+	if (SkeletalBodyMesh && SkeletalBodyMesh->IsVisible())
+	{
+		TintComponent(SkeletalBodyMesh);
+		return;
+	}
+
+	const TArray<UStaticMeshComponent*> Composite = { Torso, HeadDome, Eye, LeftArm, RightArm, Antenna };
+	for (UStaticMeshComponent* Part : Composite)
+	{
+		TintComponent(Part);
 	}
 }
 
