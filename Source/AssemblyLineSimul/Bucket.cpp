@@ -231,18 +231,23 @@ void ABucket::RefreshContents()
 			}
 		}
 
-		const FName LabelName = *FString::Printf(TEXT("NumberBallLabel_%d"), i);
-		UTextRenderComponent* Label = NewObject<UTextRenderComponent>(this, LabelName);
-		Label->SetupAttachment(Ball);
-		// Undo the ball's local scale so text renders at world-cm units.
-		Label->SetRelativeScale3D(FVector(1.f / BallScale));
-		Label->SetRelativeLocation(FVector(0.f, 0.f, LabelOffsetZ));
-		Label->SetHorizontalAlignment(EHTA_Center);
-		Label->SetVerticalAlignment(EVRTA_TextCenter);
-		Label->SetWorldSize(LabelSize);
-		Label->SetTextRenderColor(FColor::Yellow);
-		Label->SetText(FText::FromString(FString::FromInt(Contents[i])));
-		Label->RegisterComponent();
-		NumberBallLabels.Add(Label);
+		// Skip the floating-number fallback when the billiard material is in place — the
+		// number is already painted onto the ball, no need for a duplicate label.
+		if (BilliardBallMaterial.IsNull())
+		{
+			const FName LabelName = *FString::Printf(TEXT("NumberBallLabel_%d"), i);
+			UTextRenderComponent* Label = NewObject<UTextRenderComponent>(this, LabelName);
+			Label->SetupAttachment(Ball);
+			// Undo the ball's local scale so text renders at world-cm units.
+			Label->SetRelativeScale3D(FVector(1.f / BallScale));
+			Label->SetRelativeLocation(FVector(0.f, 0.f, LabelOffsetZ));
+			Label->SetHorizontalAlignment(EHTA_Center);
+			Label->SetVerticalAlignment(EVRTA_TextCenter);
+			Label->SetWorldSize(LabelSize);
+			Label->SetTextRenderColor(FColor::Yellow);
+			Label->SetText(FText::FromString(FString::FromInt(Contents[i])));
+			Label->RegisterComponent();
+			NumberBallLabels.Add(Label);
+		}
 	}
 }
