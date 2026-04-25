@@ -42,6 +42,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Bucket")
 	TSoftObjectPtr<UMaterialInterface> BilliardBallMaterial;
 
+	// Rotation applied to each ball so its painted number faces up. UE's basic sphere UV
+	// puts (U=0.5, V=0.5) at one specific longitude on the equator; this rotation orients
+	// that point toward +Z. Adjust in a Blueprint subclass if the default isn't right.
+	UPROPERTY(EditAnywhere, Category = "Bucket")
+	FRotator BallRelativeRotation = FRotator(-90.f, 0.f, 0.f);
+
 	// Fires when RefreshContents transitions Contents from empty to non-empty — the
 	// cinematic uses this to defer zoom-in for the Generator until balls actually appear.
 	FOnBucketContentsRevealed OnContentsRevealed;

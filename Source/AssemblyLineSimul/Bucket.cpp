@@ -207,6 +207,7 @@ void ABucket::RefreshContents()
 		Ball->SetupAttachment(RootComponent);
 		Ball->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Ball->SetRelativeLocation(LocalLoc);
+		Ball->SetRelativeRotation(BallRelativeRotation);
 		Ball->SetRelativeScale3D(FVector(BallScale));
 		if (CachedSphereMesh) Ball->SetStaticMesh(CachedSphereMesh);
 		Ball->RegisterComponent();
@@ -221,6 +222,8 @@ void ABucket::RefreshContents()
 				BillboardTextureSize, BillboardTextureSize);
 			if (RT && CachedNumberFont)
 			{
+				// Clear to transparent so only the rendered text contributes alpha.
+				UKismetRenderingLibrary::ClearRenderTarget2D(this, RT, FLinearColor(0.f, 0.f, 0.f, 0.f));
 				UCanvas* Canvas = nullptr;
 				FVector2D Size;
 				FDrawToRenderTargetContext Ctx;
@@ -233,31 +236,19 @@ void ABucket::RefreshContents()
 					const float EdgeOffset = BillboardTextureSize * 0.30f;
 
 					// Pick a text color that contrasts with the ball's base color: light text on
-					// dark balls, dark text on light ones. Outline always uses the inverse so
-					// the digit pops regardless of background.
+					// dark balls, dark text on light ones. NO outline — the outlined halo was
+					// dominating on bright balls and washing the digit out.
 					const FLinearColor BallColor = PickBallColor(Contents[i]);
 					const float Luminance = 0.299f * BallColor.R + 0.587f * BallColor.G + 0.114f * BallColor.B;
 					const bool bLightBall = Luminance > 0.5f;
-					const FLinearColor TextColor    = bLightBall ? FLinearColor::Black : FLinearColor::White;
-					const FLinearColor OutlineColor = bLightBall ? FLinearColor::White : FLinearColor::Black;
+					const FLinearColor TextColor = bLightBall ? FLinearColor::Black : FLinearColor::White;
 
-					// Draw the number at 5 positions across the texture so that at least one
-					// copy is visible from any viewing angle on the sphere.
-					struct FNumberStamp { FVector2D Pos; FVector2D Scale; };
-					const FNumberStamp Stamps[] = {
-						{ FVector2D(CenterX,              CenterY),              FVector2D(10.0f, 10.0f) },
-						{ FVector2D(CenterX,              CenterY - EdgeOffset), FVector2D(5.0f,  5.0f)  },
-						{ FVector2D(CenterX,              CenterY + EdgeOffset), FVector2D(5.0f,  5.0f)  },
-						{ FVector2D(CenterX - EdgeOffset, CenterY),              FVector2D(5.0f,  5.0f)  },
-						{ FVector2D(CenterX + EdgeOffset, CenterY),              FVector2D(5.0f,  5.0f)  },
-					};
-					for (const FNumberStamp& S : Stamps)
-					{
-						Canvas->K2_DrawText(CachedNumberFont, Text, S.Pos, S.Scale,
-							TextColor, 0.f,
-							OutlineColor, FVector2D(0.f, 0.f),
-							true, true, /*bOutlined=*/true, OutlineColor);
-					}
+					Canvas->K2_DrawText(CachedNumberFont, Text,
+						FVector2D(CenterX, CenterY),
+						FVector2D(10.f, 10.f),
+						TextColor, 0.f,
+						FLinearColor::Transparent, FVector2D(0.f, 0.f),
+						true, true, /*bOutlined=*/false, FLinearColor::Transparent);
 				}
 				UKismetRenderingLibrary::EndDrawCanvasToRenderTarget(this, Ctx);
 			}
