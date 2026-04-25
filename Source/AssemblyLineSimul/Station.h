@@ -64,6 +64,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Station")
 	FString DisplayName = TEXT("Station");
 
+	// Plain-English rule that drives this station's ProcessBucket. Subclass constructors set
+	// the default; UAgentChatSubsystem updates this when the user instructs the agent via chat.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Station")
+	FString CurrentRule;
+
 	virtual void ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete);
 
 	// Set the talk-panel text immediately.

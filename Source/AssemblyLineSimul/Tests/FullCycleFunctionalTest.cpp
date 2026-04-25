@@ -10,9 +10,9 @@
 
 AFullCycleFunctionalTest::AFullCycleFunctionalTest()
 {
-	// Budget: Checker forces a 10s "Working" wait, plus up to 20s HTTP timeout if Claude is slow,
-	// plus per-station walk+work (~5s each), plus possible rework on Filter/Sorter rejection.
-	TimeLimit = 120.f;
+	// Budget: every station now does an async LLM call (Generator + Filter + Sorter + Checker),
+	// each up to 20s HTTP timeout, on top of WorkDuration per station and potential Checker rework.
+	TimeLimit = 240.f;
 	Description = TEXT("Generator -> Filter -> Sorter -> Checker cycle completes; no worker stranded mid-task.");
 }
 

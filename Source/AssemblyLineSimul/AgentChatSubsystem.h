@@ -37,6 +37,7 @@ private:
 	void HandleClaudeResponse(EStationType StationType, bool bSuccess, const FString& Response);
 	void SpeakResponse(const FString& Text) const;
 	FString GetRoleDescription(EStationType StationType) const;
+	FString GetCurrentRule(EStationType StationType) const;
 	FString GetCurrentBucketContents(EStationType StationType) const;
 	FString StationTypeName(EStationType StationType) const;
 };

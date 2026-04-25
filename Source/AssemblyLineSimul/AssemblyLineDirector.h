@@ -41,6 +41,10 @@ public:
 	// CurrentBucket). Returns nullptr if the station type isn't registered.
 	AWorkerRobot* GetRobotForStation(EStationType Type) const;
 
+	// Public accessor so the chat subsystem can update a station's CurrentRule when the
+	// user instructs the agent. Returns nullptr if not registered.
+	AStation* GetStationOfType(EStationType Type) const;
+
 	// Fires when a registered worker enters the PickUp phase at its station.
 	FOnAssemblyLineStationActive OnStationActive;
 

@@ -28,16 +28,17 @@ namespace
 
 	constexpr int32 BillboardTextureSize = 512;
 
-	// Pool-ball palette indexed by Number % PaletteSize. First 8 mirror real billiard colors.
+	// Dark-only palette so white digits stay legible. No yellow / orange / pastels —
+	// every entry's luminance stays well below 0.5.
 	static const FLinearColor BallPalette[] = {
-		FLinearColor(1.0f,  0.85f, 0.0f,  1.f),  // 0 -> yellow
-		FLinearColor(0.0f,  0.3f,  0.85f, 1.f),  // 1 -> blue
-		FLinearColor(0.85f, 0.1f,  0.1f,  1.f),  // 2 -> red
-		FLinearColor(0.5f,  0.1f,  0.55f, 1.f),  // 3 -> purple
-		FLinearColor(1.0f,  0.5f,  0.0f,  1.f),  // 4 -> orange
-		FLinearColor(0.0f,  0.5f,  0.2f,  1.f),  // 5 -> green
-		FLinearColor(0.5f,  0.05f, 0.1f,  1.f),  // 6 -> maroon
-		FLinearColor(0.05f, 0.05f, 0.05f, 1.f),  // 7 -> black
+		FLinearColor(0.05f, 0.05f, 0.05f, 1.f),  // 0 -> near-black
+		FLinearColor(0.05f, 0.15f, 0.45f, 1.f),  // 1 -> deep blue
+		FLinearColor(0.45f, 0.05f, 0.05f, 1.f),  // 2 -> dark red
+		FLinearColor(0.30f, 0.05f, 0.40f, 1.f),  // 3 -> dark purple
+		FLinearColor(0.05f, 0.30f, 0.10f, 1.f),  // 4 -> forest green
+		FLinearColor(0.40f, 0.05f, 0.20f, 1.f),  // 5 -> wine
+		FLinearColor(0.10f, 0.25f, 0.35f, 1.f),  // 6 -> teal-slate
+		FLinearColor(0.30f, 0.15f, 0.05f, 1.f),  // 7 -> dark brown
 	};
 
 	FLinearColor PickBallColor(int32 Number)

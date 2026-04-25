@@ -39,6 +39,11 @@ AWorkerRobot* UAssemblyLineDirector::GetRobot(EStationType Type) const
 	return nullptr;
 }
 
+AStation* UAssemblyLineDirector::GetStationOfType(EStationType Type) const
+{
+	return GetStation(Type);
+}
+
 AWorkerRobot* UAssemblyLineDirector::GetRobotForStation(EStationType Type) const
 {
 	return GetRobot(Type);

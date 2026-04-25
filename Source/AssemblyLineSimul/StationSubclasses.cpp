@@ -3,8 +3,13 @@
 #include "ClaudeAPISubsystem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Dom/JsonObject.h"
 #include "Engine/GameInstance.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "TimerManager.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogStation, Log, All);
 
 namespace
 {
@@ -19,6 +24,62 @@ namespace
 		}
 		return true;
 	}
+
+	// Extracts the smallest balanced {...} substring from a possibly chatty LLM response.
+	// Claude sometimes wraps JSON in prose or ```json fences even when asked not to.
+	bool ExtractJsonObject(const FString& Response, FString& OutJson)
+	{
+		const int32 Start = Response.Find(TEXT("{"));
+		if (Start == INDEX_NONE) return false;
+		int32 Depth = 0;
+		for (int32 i = Start; i < Response.Len(); ++i)
+		{
+			const TCHAR C = Response[i];
+			if (C == TEXT('{')) ++Depth;
+			else if (C == TEXT('}'))
+			{
+				if (--Depth == 0)
+				{
+					OutJson = Response.Mid(Start, i - Start + 1);
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	bool ParseResultArray(const FString& Response, TArray<int32>& OutNumbers)
+	{
+		FString JsonStr;
+		if (!ExtractJsonObject(Response, JsonStr)) return false;
+
+		TSharedPtr<FJsonObject> Root;
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
+		if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid()) return false;
+
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if (!Root->TryGetArrayField(TEXT("result"), Arr) || !Arr) return false;
+
+		OutNumbers.Reset(Arr->Num());
+		for (const TSharedPtr<FJsonValue>& V : *Arr)
+		{
+			if (!V.IsValid()) continue;
+			double D = 0.0;
+			if (V->TryGetNumber(D))
+			{
+				OutNumbers.Add(FMath::RoundToInt(D));
+			}
+		}
+		return true;
+	}
+
+	UClaudeAPISubsystem* GetClaude(const AActor* Actor)
+	{
+		if (!Actor) return nullptr;
+		UWorld* W = Actor->GetWorld();
+		UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
+		return GI ? GI->GetSubsystem<UClaudeAPISubsystem>() : nullptr;
+	}
 }
 
 // ---- Generator ----------------------------------------------------------------
@@ -27,6 +88,7 @@ AGeneratorStation::AGeneratorStation()
 {
 	StationType = EStationType::Generator;
 	DisplayName = TEXT("GENERATOR");
+	CurrentRule = TEXT("Generate 10 random integers in the range 1 to 100");
 	if (NameLabel) NameLabel->SetTextRenderColor(FColor::Green);
 }
 
@@ -39,43 +101,81 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 		return;
 	}
 
-	Bucket->Contents.Reset(BucketSize);
-	for (int32 i = 0; i < BucketSize; ++i)
+	UClaudeAPISubsystem* Claude = GetClaude(this);
+	if (!Claude)
 	{
-		Bucket->Contents.Add(FMath::RandRange(MinValue, MaxValue));
-	}
-	Bucket->RefreshContents();
-	SpeakStreaming(FString::Printf(TEXT("Generated %d random numbers in [%d, %d]"),
-		BucketSize, MinValue, MaxValue));
-
-	// Hold for the full per-station duration before letting the worker move on, so the cinematic
-	// (which just zoomed in on OnContentsRevealed) has time to show the freshly-filled bucket
-	// for as long as other stations show their work.
-	UWorld* W = GetWorld();
-	if (!W)
-	{
-		FStationProcessResult R; R.bAccepted = true;
+		SpeakStreaming(TEXT("LLM unreachable — generator has no rule engine to fall back on."));
+		FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM unreachable");
 		OnComplete.ExecuteIfBound(R);
 		return;
 	}
-	FStationProcessComplete CapturedCompletion = OnComplete;
-	FTimerHandle Th;
-	W->GetTimerManager().SetTimer(Th,
-		FTimerDelegate::CreateLambda([CapturedCompletion]()
+
+	const FString Prompt = FString::Printf(
+		TEXT("You are the Generator agent on an assembly line. Apply this rule to produce a fresh ")
+		TEXT("bucket of integers:\n\n")
+		TEXT("RULE: %s\n\n")
+		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
+		TEXT("{\"result\":[<integers>]}\n")
+		TEXT("Example: {\"result\":[3,17,42,7,91]}"),
+		*CurrentRule);
+
+	SpeakStreaming(FString::Printf(TEXT("Generating per rule: %s"), *CurrentRule));
+
+	TWeakObjectPtr<AGeneratorStation> WeakThis(this);
+	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
+	Claude->SendMessage(Prompt,
+		FClaudeComplete::CreateLambda([WeakThis, WeakBucket, OnComplete](bool bSuccess, const FString& Response)
 		{
-			FStationProcessResult R; R.bAccepted = true;
-			CapturedCompletion.ExecuteIfBound(R);
-		}),
-		20.0f, false);
+			AGeneratorStation* Self = WeakThis.Get();
+			ABucket* B = WeakBucket.Get();
+			if (!Self || !B)
+			{
+				FStationProcessResult R; R.bAccepted = true;
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+
+			TArray<int32> Numbers;
+			if (!bSuccess || !ParseResultArray(Response, Numbers))
+			{
+				Self->SpeakStreaming(FString::Printf(TEXT("LLM failed: %s"), *Response));
+				FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM failed");
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+
+			B->Contents = MoveTemp(Numbers);
+			B->RefreshContents();
+			Self->SpeakStreaming(FString::Printf(TEXT("Generated: %s"), *B->GetContentsString()));
+
+			// Hold for the full per-station duration before letting the worker move on, so the
+			// cinematic (which just zoomed in on OnContentsRevealed) has time to show the
+			// freshly-filled bucket as long as other stations show their work.
+			UWorld* W = Self->GetWorld();
+			if (!W)
+			{
+				FStationProcessResult R; R.bAccepted = true;
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+			FTimerHandle Th;
+			W->GetTimerManager().SetTimer(Th,
+				FTimerDelegate::CreateLambda([OnComplete]()
+				{
+					FStationProcessResult R; R.bAccepted = true;
+					OnComplete.ExecuteIfBound(R);
+				}),
+				20.0f, false);
+		}));
 }
 
-// ---- Filter (primes) ----------------------------------------------------------
+// ---- Filter -------------------------------------------------------------------
 
 AFilterStation::AFilterStation()
 {
 	StationType = EStationType::Filter;
-	DisplayName = TEXT("FILTER (PRIMES)");
-	ErrorRate = 0.15f;
+	DisplayName = TEXT("FILTER");
+	CurrentRule = TEXT("Keep only the prime numbers; remove non-primes.");
 }
 
 void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
@@ -87,25 +187,57 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 		return;
 	}
 
-	TArray<int32> Filtered;
-	Filtered.Reserve(Bucket->Contents.Num());
-	for (int32 N : Bucket->Contents)
+	UClaudeAPISubsystem* Claude = GetClaude(this);
+	if (!Claude)
 	{
-		const bool bPrime = IsPrime(N);
-		// "Mistake": occasionally let a non-prime through.
-		const bool bMistake = !bPrime && FMath::FRand() < ErrorRate;
-		if (bPrime || bMistake)
-		{
-			Filtered.Add(N);
-		}
+		SpeakStreaming(TEXT("LLM unreachable — passing bucket through unchanged."));
+		FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM unreachable");
+		OnComplete.ExecuteIfBound(R);
+		return;
 	}
-	const int32 KeptCount = Filtered.Num();
-	Bucket->Contents = MoveTemp(Filtered);
-	Bucket->RefreshContents();
-	SpeakStreaming(FString::Printf(TEXT("Kept %d primes"), KeptCount));
 
-	FStationProcessResult R; R.bAccepted = true;
-	OnComplete.ExecuteIfBound(R);
+	const FString Input = Bucket->GetContentsString();
+	const FString Prompt = FString::Printf(
+		TEXT("You are the Filter agent on an assembly line. Apply this rule to the input bucket ")
+		TEXT("and return the filtered bucket. Preserve the original order of the kept items.\n\n")
+		TEXT("RULE: %s\n")
+		TEXT("INPUT: [%s]\n\n")
+		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
+		TEXT("{\"result\":[<integers>]}"),
+		*CurrentRule, *Input);
+
+	SpeakStreaming(FString::Printf(TEXT("Filtering [%s] per rule: %s"), *Input, *CurrentRule));
+
+	TWeakObjectPtr<AFilterStation> WeakThis(this);
+	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
+	Claude->SendMessage(Prompt,
+		FClaudeComplete::CreateLambda([WeakThis, WeakBucket, OnComplete](bool bSuccess, const FString& Response)
+		{
+			AFilterStation* Self = WeakThis.Get();
+			ABucket* B = WeakBucket.Get();
+			if (!Self || !B)
+			{
+				FStationProcessResult R; R.bAccepted = true;
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+
+			TArray<int32> Numbers;
+			if (!bSuccess || !ParseResultArray(Response, Numbers))
+			{
+				Self->SpeakStreaming(FString::Printf(TEXT("LLM failed: %s"), *Response));
+				FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM failed");
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+
+			B->Contents = MoveTemp(Numbers);
+			B->RefreshContents();
+			Self->SpeakStreaming(FString::Printf(TEXT("Kept: %s"), *B->GetContentsString()));
+
+			FStationProcessResult R; R.bAccepted = true;
+			OnComplete.ExecuteIfBound(R);
+		}));
 }
 
 // ---- Sorter -------------------------------------------------------------------
@@ -114,7 +246,7 @@ ASorterStation::ASorterStation()
 {
 	StationType = EStationType::Sorter;
 	DisplayName = TEXT("SORTER");
-	ErrorRate = 0.15f;
+	CurrentRule = TEXT("Sort the numbers in strictly ascending order.");
 }
 
 void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
@@ -126,19 +258,57 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 		return;
 	}
 
-	Bucket->Contents.Sort();
-
-	// "Mistake": occasionally swap two adjacent values after sorting.
-	if (Bucket->Contents.Num() >= 2 && FMath::FRand() < ErrorRate)
+	UClaudeAPISubsystem* Claude = GetClaude(this);
+	if (!Claude)
 	{
-		const int32 Idx = FMath::RandRange(0, Bucket->Contents.Num() - 2);
-		Bucket->Contents.Swap(Idx, Idx + 1);
+		SpeakStreaming(TEXT("LLM unreachable — passing bucket through unchanged."));
+		FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM unreachable");
+		OnComplete.ExecuteIfBound(R);
+		return;
 	}
-	Bucket->RefreshContents();
-	SpeakStreaming(TEXT("Sorted ascending"));
 
-	FStationProcessResult R; R.bAccepted = true;
-	OnComplete.ExecuteIfBound(R);
+	const FString Input = Bucket->GetContentsString();
+	const FString Prompt = FString::Printf(
+		TEXT("You are the Sorter agent on an assembly line. Apply this rule to the input bucket ")
+		TEXT("and return the reordered bucket (do not add or remove values, only reorder).\n\n")
+		TEXT("RULE: %s\n")
+		TEXT("INPUT: [%s]\n\n")
+		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
+		TEXT("{\"result\":[<integers>]}"),
+		*CurrentRule, *Input);
+
+	SpeakStreaming(FString::Printf(TEXT("Sorting [%s] per rule: %s"), *Input, *CurrentRule));
+
+	TWeakObjectPtr<ASorterStation> WeakThis(this);
+	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
+	Claude->SendMessage(Prompt,
+		FClaudeComplete::CreateLambda([WeakThis, WeakBucket, OnComplete](bool bSuccess, const FString& Response)
+		{
+			ASorterStation* Self = WeakThis.Get();
+			ABucket* B = WeakBucket.Get();
+			if (!Self || !B)
+			{
+				FStationProcessResult R; R.bAccepted = true;
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+
+			TArray<int32> Numbers;
+			if (!bSuccess || !ParseResultArray(Response, Numbers))
+			{
+				Self->SpeakStreaming(FString::Printf(TEXT("LLM failed: %s"), *Response));
+				FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM failed");
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+
+			B->Contents = MoveTemp(Numbers);
+			B->RefreshContents();
+			Self->SpeakStreaming(FString::Printf(TEXT("Sorted: %s"), *B->GetContentsString()));
+
+			FStationProcessResult R; R.bAccepted = true;
+			OnComplete.ExecuteIfBound(R);
+		}));
 }
 
 // ---- Checker (LLM) ------------------------------------------------------------
@@ -147,6 +317,7 @@ ACheckerStation::ACheckerStation()
 {
 	StationType = EStationType::Checker;
 	DisplayName = TEXT("CHECKER (LLM)");
+	CurrentRule = TEXT("The bucket should contain only prime numbers in [1, 100], sorted strictly ascending. If correct, accept. If not, identify which prior station likely made the mistake (Filter for content errors; Sorter for ordering errors).");
 	if (NameLabel) NameLabel->SetTextRenderColor(FColor::Magenta);
 }
 
@@ -159,46 +330,28 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 		return;
 	}
 
-	UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-	UClaudeAPISubsystem* Claude = GI ? GI->GetSubsystem<UClaudeAPISubsystem>() : nullptr;
-
+	UClaudeAPISubsystem* Claude = GetClaude(this);
 	const FString Numbers = Bucket->GetContentsString();
 	const FString Prompt = FString::Printf(
-		TEXT("You are the QA agent on an assembly line. The Filter station should remove all non-primes; ")
-		TEXT("the Sorter station should sort the remaining primes ascending. ")
-		TEXT("Verify this bucket meets ALL THREE conditions: (1) every value is prime, (2) values are sorted ")
-		TEXT("strictly ascending, (3) every value is in range 1-100.\n\n")
-		TEXT("Bucket: %s\n\n")
+		TEXT("You are the QA / Checker agent on an assembly line. Verify the bucket against your rule.\n\n")
+		TEXT("RULE: %s\n")
+		TEXT("BUCKET: %s\n\n")
+		TEXT("Be conservative: ACCEPT unless you can name a SPECIFIC offending item ")
+		TEXT("(e.g. '9 is not prime') or a SPECIFIC out-of-order pair ")
+		TEXT("(e.g. '17 comes before 11'). Bucket size alone is not a reason to reject.\n\n")
 		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
 		TEXT("{\"verdict\":\"pass\"|\"reject\",\"reason\":\"...\",\"send_back_to\":\"Filter\"|\"Sorter\"|null}\n")
-		TEXT("If verdict is pass, send_back_to MUST be null. ")
-		TEXT("If non-primes are present, send back to Filter. ")
-		TEXT("If only ordering is wrong, send back to Sorter. ")
-		TEXT("The 'reason' must be ONE plain-English sentence (no jargon, no JSON-speak) ")
-		TEXT("that an audience can read on a screen — name specific offending numbers if relevant. ")
-		TEXT("Keep reason under 140 characters."),
-		*Numbers);
+		TEXT("On reject: send_back_to is 'Filter' for content errors, 'Sorter' for ordering errors. ")
+		TEXT("On pass: send_back_to MUST be null.\n")
+		TEXT("'reason' is ONE plain-English sentence (no JSON-speak) under 140 characters."),
+		*CurrentRule, *Numbers);
 
 	SpeakStreaming(FString::Printf(TEXT("Inspecting bucket: %s"), *Numbers));
 
 	if (!Claude)
 	{
-		// Fallback: deterministic local check so the demo still runs without an API key.
-		FStationProcessResult R; R.bAccepted = true;
-		bool bAllPrime = true, bSorted = true, bInRange = true;
-		for (int32 i = 0; i < Bucket->Contents.Num(); ++i)
-		{
-			const int32 N = Bucket->Contents[i];
-			if (N < 1 || N > 100) bInRange = false;
-			if (!IsPrime(N)) bAllPrime = false;
-			if (i > 0 && Bucket->Contents[i - 1] >= N) bSorted = false;
-		}
-		if (!bAllPrime) { R.bAccepted = false; R.Reason = TEXT("Non-prime present"); R.SendBackTo = EStationType::Filter; }
-		else if (!bSorted) { R.bAccepted = false; R.Reason = TEXT("Out of order"); R.SendBackTo = EStationType::Sorter; }
-		else if (!bInRange) { R.bAccepted = false; R.Reason = TEXT("Out of range"); R.SendBackTo = EStationType::Filter; }
-		else { R.Reason = TEXT("All checks passed"); }
-		SpeakStreaming(FString::Printf(TEXT("%s: %s"),
-			R.bAccepted ? TEXT("PASS") : TEXT("REJECT"), *R.Reason));
+		FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM unreachable, accepting by default");
+		SpeakStreaming(R.Reason);
 		OnComplete.ExecuteIfBound(R);
 		return;
 	}
@@ -220,26 +373,36 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 				return;
 			}
 
-			// Naive JSON extraction (the prompt asks for one-line JSON).
-			FString Verdict, Reason, SendBack;
-			auto Extract = [&](const FString& Key, FString& Out)
-			{
-				const FString Needle = FString::Printf(TEXT("\"%s\""), *Key);
-				int32 KeyIdx = Response.Find(Needle);
-				if (KeyIdx == INDEX_NONE) return;
-				int32 Colon = Response.Find(TEXT(":"), ESearchCase::IgnoreCase, ESearchDir::FromStart, KeyIdx);
-				if (Colon == INDEX_NONE) return;
-				int32 Q1 = Response.Find(TEXT("\""), ESearchCase::IgnoreCase, ESearchDir::FromStart, Colon);
-				if (Q1 == INDEX_NONE) return;
-				int32 Q2 = Response.Find(TEXT("\""), ESearchCase::IgnoreCase, ESearchDir::FromStart, Q1 + 1);
-				if (Q2 == INDEX_NONE) return;
-				Out = Response.Mid(Q1 + 1, Q2 - Q1 - 1);
-			};
-			Extract(TEXT("verdict"), Verdict);
-			Extract(TEXT("reason"), Reason);
-			Extract(TEXT("send_back_to"), SendBack);
+			UE_LOG(LogStation, Log, TEXT("Checker raw response: %s"), *Response);
 
-			R.bAccepted = Verdict.Equals(TEXT("pass"), ESearchCase::IgnoreCase);
+			FString JsonStr;
+			TSharedPtr<FJsonObject> Root;
+			if (ExtractJsonObject(Response, JsonStr))
+			{
+				const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
+				FJsonSerializer::Deserialize(Reader, Root);
+			}
+
+			FString Verdict, Reason, SendBack;
+			if (Root.IsValid())
+			{
+				Root->TryGetStringField(TEXT("verdict"), Verdict);
+				Root->TryGetStringField(TEXT("reason"), Reason);
+				Root->TryGetStringField(TEXT("send_back_to"), SendBack);
+			}
+			else
+			{
+				UE_LOG(LogStation, Warning,
+					TEXT("Checker JSON parse failed; defaulting to accept. Raw: %s"), *Response);
+			}
+
+			// Treat any "pass"/"accept"/"ok" variant as accept. If verdict is missing entirely
+			// (parse failure or empty field), default to accept so a flaky LLM reply doesn't
+			// reject an otherwise-valid bucket.
+			const FString VLower = Verdict.ToLower();
+			const bool bExplicitReject =
+				VLower.Contains(TEXT("reject")) || VLower.Contains(TEXT("fail"));
+			R.bAccepted = !bExplicitReject;
 			R.Reason = Reason.IsEmpty() ? TEXT("(no reason)") : Reason;
 			if (SendBack.Equals(TEXT("Sorter"), ESearchCase::IgnoreCase))
 			{

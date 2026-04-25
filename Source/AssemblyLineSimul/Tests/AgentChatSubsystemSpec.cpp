@@ -39,7 +39,7 @@ void FAgentChatSubsystemSpec::Define()
 
 	Describe("BuildPromptForStation", [this]()
 	{
-		It("includes the station's role and the user message in the prompt", [this]()
+		It("includes the station's role, current rule, JSON-reply contract, and the user message", [this]()
 		{
 			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
 			UAgentChatSubsystem* Sub = NewObject<UAgentChatSubsystem>(GI);
@@ -51,8 +51,10 @@ void FAgentChatSubsystemSpec::Define()
 
 			TestTrue(TEXT("prompt mentions Filter"),
 				Prompt.Contains(TEXT("Filter"), ESearchCase::IgnoreCase));
-			TestTrue(TEXT("prompt mentions prime"),
-				Prompt.Contains(TEXT("prime"), ESearchCase::IgnoreCase));
+			TestTrue(TEXT("prompt mentions the rule"),
+				Prompt.Contains(TEXT("rule"), ESearchCase::IgnoreCase));
+			TestTrue(TEXT("prompt asks for JSON reply with new_rule field"),
+				Prompt.Contains(TEXT("new_rule")));
 			TestTrue(TEXT("prompt contains the user message"),
 				Prompt.Contains(TEXT("hello agent")));
 		});
