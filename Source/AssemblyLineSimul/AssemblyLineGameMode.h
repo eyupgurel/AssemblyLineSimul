@@ -7,6 +7,9 @@
 
 class USkeletalMesh;
 class UStationTalkWidget;
+class UAgentChatWidget;
+class UInputAction;
+class UInputMappingContext;
 class ABucket;
 
 UCLASS()
@@ -58,6 +61,16 @@ public:
 	// Spawns an AAssemblyLineFeedback actor that flashes lights on Checker accept/reject.
 	void SpawnFeedback();
 
+	// Spawns the chat widget, hides it, and binds Tab to toggle visibility / focus.
+	void SpawnChatWidget();
+
+	UFUNCTION() void ToggleChatWidget();
+
 protected:
 	virtual void BeginPlay() override;
+
+private:
+	UPROPERTY() TObjectPtr<UAgentChatWidget>       ChatWidget;
+	UPROPERTY() TObjectPtr<UInputAction>           ChatToggleAction;
+	UPROPERTY() TObjectPtr<UInputMappingContext>   ChatToggleMappingContext;
 };

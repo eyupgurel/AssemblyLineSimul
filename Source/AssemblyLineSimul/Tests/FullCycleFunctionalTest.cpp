@@ -20,17 +20,10 @@ void AFullCycleFunctionalTest::StartTest()
 {
 	Super::StartTest();
 
-	// The Checker calls Anthropic's API; non-2xx responses (e.g. expired credits, bad key)
-	// get logged as Warnings by ClaudeAPISubsystem and the Checker's deterministic local
-	// fallback still accepts the bucket. AC3 verifies FSM completion, not LLM connectivity.
-	// Only "Claude API error" is registered — the other warning paths (no API key, HTTP
-	// connection failure) didn't fire in this environment, and AddExpectedMessage requires
-	// the pattern to appear at least once or it fails the test.
-	if (FAutomationTestBase* Test = FAutomationTestFramework::Get().GetCurrentTest())
-	{
-		Test->AddExpectedMessagePlain(TEXT("Claude API error"),
-			ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 0);
-	}
+	// AC3 verifies FSM completion, not LLM connectivity. Suppress LogClaudeAPI so any
+	// warnings from the Anthropic call (auth, credit, network) don't fail the test —
+	// SuppressedLogCategories is a static on FAutomationTestBase, set once.
+	FAutomationTestBase::SuppressedLogCategories.AddUnique(TEXT("LogClaudeAPI"));
 
 	UWorld* World = GetWorld();
 	if (!World)

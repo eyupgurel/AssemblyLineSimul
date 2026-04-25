@@ -27,5 +27,17 @@ struct FStationProcessResult
 	EStationType SendBackTo = EStationType::Filter;
 };
 
+USTRUCT(BlueprintType)
+struct FAgentChatMessage
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	FString Role;  // "user" or "assistant"
+
+	UPROPERTY(BlueprintReadOnly)
+	FString Text;
+};
+
 class ABucket;
 DECLARE_DELEGATE_OneParam(FStationProcessComplete, FStationProcessResult);
