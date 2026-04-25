@@ -15,18 +15,18 @@
 namespace
 {
 	// Crate inner extents (cm) — balls live inside, edges trace the perimeter.
-	constexpr float CrateHalfX = 60.f;
-	constexpr float CrateHalfY = 40.f;
+	constexpr float CrateHalfX = 90.f;
+	constexpr float CrateHalfY = 70.f;
 	constexpr float CrateHalfZ = 30.f;
-	constexpr float EdgeThicknessScale = 0.07f;  // cylinder XY scale
+	constexpr float EdgeThicknessScale = 0.10f;  // chunky enough to read from the high overhead
 
-	constexpr int32 BallGridCols = 5;
-	constexpr float BallSpacing  = 22.f;
-	constexpr float BallScale    = 0.20f;
+	constexpr int32 BallGridCols = 4;
+	constexpr float BallSpacing  = 45.f;
+	constexpr float BallScale    = 0.30f;
 	constexpr float LabelSize    = 35.f;
 	constexpr float LabelOffsetZ = 150.f;  // in ball-local space; world Z = LabelOffsetZ * BallScale
 
-	constexpr int32 BillboardTextureSize = 256;
+	constexpr int32 BillboardTextureSize = 512;
 
 	// Pool-ball palette indexed by Number % PaletteSize. First 8 mirror real billiard colors.
 	static const FLinearColor BallPalette[] = {
@@ -64,6 +64,9 @@ ABucket::ABucket()
 	}
 	MeshComponent->SetVisibility(false);  // hidden — wireframe edges replace it
 	// Root scale stays at (1,1,1) so crate edges and balls render in raw cm units.
+
+	// Hide the entire actor at spawn — RefreshContents un-hides it when Contents is non-empty.
+	SetActorHiddenInGame(true);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(
 		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
@@ -167,6 +170,8 @@ FString ABucket::GetContentsString() const
 
 void ABucket::RefreshContents()
 {
+	const bool bWasHidden = IsHidden();
+
 	for (UStaticMeshComponent* Ball : NumberBalls)
 	{
 		if (Ball) Ball->DestroyComponent();
@@ -179,6 +184,14 @@ void ABucket::RefreshContents()
 	NumberBallLabels.Reset();
 
 	const int32 N = Contents.Num();
+	// Hide the bucket entirely when empty so the audience never sees an unfilled crate.
+	SetActorHiddenInGame(N == 0);
+
+	// Notify observers when the crate transitions from empty/hidden to filled/visible.
+	if (bWasHidden && N > 0)
+	{
+		OnContentsRevealed.Broadcast();
+	}
 	const int32 Rows = FMath::DivideAndRoundUp(N, BallGridCols);
 	const float OffsetX = -0.5f * (BallGridCols - 1) * BallSpacing;
 	const float OffsetY = -0.5f * (Rows - 1) * BallSpacing;
@@ -214,12 +227,37 @@ void ABucket::RefreshContents()
 				UKismetRenderingLibrary::BeginDrawCanvasToRenderTarget(this, RT, Canvas, Size, Ctx);
 				if (Canvas)
 				{
-					Canvas->K2_DrawText(CachedNumberFont, FString::FromInt(Contents[i]),
-						FVector2D(BillboardTextureSize * 0.5f, BillboardTextureSize * 0.5f),
-						FVector2D(3.5f, 3.5f),
-						FLinearColor::White, 0.f,
-						FLinearColor::Black, FVector2D(2.f, 2.f),
-						true, true, false, FLinearColor::Black);
+					const FString Text = FString::FromInt(Contents[i]);
+					const float CenterX = BillboardTextureSize * 0.5f;
+					const float CenterY = BillboardTextureSize * 0.5f;
+					const float EdgeOffset = BillboardTextureSize * 0.30f;
+
+					// Pick a text color that contrasts with the ball's base color: light text on
+					// dark balls, dark text on light ones. Outline always uses the inverse so
+					// the digit pops regardless of background.
+					const FLinearColor BallColor = PickBallColor(Contents[i]);
+					const float Luminance = 0.299f * BallColor.R + 0.587f * BallColor.G + 0.114f * BallColor.B;
+					const bool bLightBall = Luminance > 0.5f;
+					const FLinearColor TextColor    = bLightBall ? FLinearColor::Black : FLinearColor::White;
+					const FLinearColor OutlineColor = bLightBall ? FLinearColor::White : FLinearColor::Black;
+
+					// Draw the number at 5 positions across the texture so that at least one
+					// copy is visible from any viewing angle on the sphere.
+					struct FNumberStamp { FVector2D Pos; FVector2D Scale; };
+					const FNumberStamp Stamps[] = {
+						{ FVector2D(CenterX,              CenterY),              FVector2D(10.0f, 10.0f) },
+						{ FVector2D(CenterX,              CenterY - EdgeOffset), FVector2D(5.0f,  5.0f)  },
+						{ FVector2D(CenterX,              CenterY + EdgeOffset), FVector2D(5.0f,  5.0f)  },
+						{ FVector2D(CenterX - EdgeOffset, CenterY),              FVector2D(5.0f,  5.0f)  },
+						{ FVector2D(CenterX + EdgeOffset, CenterY),              FVector2D(5.0f,  5.0f)  },
+					};
+					for (const FNumberStamp& S : Stamps)
+					{
+						Canvas->K2_DrawText(CachedNumberFont, Text, S.Pos, S.Scale,
+							TextColor, 0.f,
+							OutlineColor, FVector2D(0.f, 0.f),
+							true, true, /*bOutlined=*/true, OutlineColor);
+					}
 				}
 				UKismetRenderingLibrary::EndDrawCanvasToRenderTarget(this, Ctx);
 			}

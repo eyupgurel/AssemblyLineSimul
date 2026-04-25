@@ -37,6 +37,10 @@ public:
 	// Fires when the Checker rejects a bucket (after which it gets sent back to a prior station).
 	FOnAssemblyLineCycleRejected OnCycleRejected;
 
+	// Public accessor for the cinematic to introspect a station's worker (and therefore its
+	// CurrentBucket). Returns nullptr if the station type isn't registered.
+	AWorkerRobot* GetRobotForStation(EStationType Type) const;
+
 	// Fires when a registered worker enters the PickUp phase at its station.
 	FOnAssemblyLineStationActive OnStationActive;
 

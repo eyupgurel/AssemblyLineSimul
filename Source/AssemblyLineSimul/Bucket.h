@@ -9,6 +9,8 @@ class UTextRenderComponent;
 class UMaterialInterface;
 class UFont;
 
+DECLARE_MULTICAST_DELEGATE(FOnBucketContentsRevealed);
+
 UCLASS()
 class ASSEMBLYLINESIMUL_API ABucket : public AActor
 {
@@ -39,6 +41,10 @@ public:
 	// material: NumberTexture (Texture2D), BaseColor (Vector).
 	UPROPERTY(EditAnywhere, Category = "Bucket")
 	TSoftObjectPtr<UMaterialInterface> BilliardBallMaterial;
+
+	// Fires when RefreshContents transitions Contents from empty to non-empty — the
+	// cinematic uses this to defer zoom-in for the Generator until balls actually appear.
+	FOnBucketContentsRevealed OnContentsRevealed;
 
 	UFUNCTION(BlueprintCallable, Category = "Bucket")
 	FString GetContentsString() const;

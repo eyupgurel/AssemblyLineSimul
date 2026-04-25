@@ -39,7 +39,20 @@ AStation::AStation()
 
 	WorkerStandPoint = CreateDefaultSubobject<USceneComponent>(TEXT("WorkerStandPoint"));
 	WorkerStandPoint->SetupAttachment(RootComponent);
-	WorkerStandPoint->SetRelativeLocation(FVector(-250.f, 0.f, 0.f));
+	WorkerStandPoint->SetRelativeLocation(FVector(-100.f, 130.f, 0.f));
+
+	WorkTable = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WorkTable"));
+	WorkTable->SetupAttachment(RootComponent);
+	WorkTable->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WorkTable->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
+	WorkTable->SetRelativeScale3D(FVector(2.5f, 2.0f, 0.15f));
+	if (CubeFinder.Succeeded()) WorkTable->SetStaticMesh(CubeFinder.Object);
+
+	BucketDockPoint = CreateDefaultSubobject<USceneComponent>(TEXT("BucketDockPoint"));
+	BucketDockPoint->SetupAttachment(WorkTable);
+	BucketDockPoint->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
+	// Counter the WorkTable's flat scale so the dock doesn't carry it onto child attachments.
+	BucketDockPoint->SetRelativeScale3D(FVector(1.f / 2.5f, 1.f / 2.0f, 1.f / 0.15f));
 
 	NameLabel = CreateDefaultSubobject<UTextRenderComponent>(TEXT("NameLabel"));
 	NameLabel->SetupAttachment(RootComponent);

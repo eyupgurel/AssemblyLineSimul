@@ -59,6 +59,11 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 		if (Robot)
 		{
 			Robot->AssignStation(Station);
+			// Generator skips the WorkTimer wait — its ProcessBucket fills + holds, so the
+			// camera doesn't sit on an empty table.
+			Robot->WorkDuration = (Station->StationType == EStationType::Generator)
+				? 0.f
+				: StationWorkDuration;
 			Robot->BodyMeshAsset = WorkerRobotMeshAsset;
 			Robot->LoadAndApplyBodyMesh();
 			if (const FLinearColor* Tint = RobotTintByStation.Find(Station->StationType))
@@ -106,14 +111,14 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 	Cinematic->Shots.Reset();
 	// 0: wide overview (also the resume shot). Slow blend out of closeups for relaxed pacing.
 	Cinematic->Shots.Add(MakeShot(LineCenter + FVector(-2200.f, 2200.f, 1600.f), LineCenter, 85.f, 8.f, 2.5f));
-	// 1..4: per-station closeups framed on the BUCKET (which sits at the worker's carry socket
-	// ~190cm in front of each station). Slightly elevated and pulled back so the floating numbers
-	// above the balls are in frame too.
+	// 1..4: high-angle overhead per station — camera tilted ~57° down from a slight Y offset
+	// so we look at the bucket sitting on the worktable. Bucket dock is at S + (0, 0, 120ish);
+	// camera at S + (0, 250, 500) → distance ~460cm, FOV 45° → ~380cm view width.
 	for (int32 i = 0; i < StationCount; ++i)
 	{
 		const FVector S = StationLoc(i);
-		const FVector BucketArea = S + FVector(-190.f, 0.f, 30.f);
-		Cinematic->Shots.Add(MakeShot(S + FVector(-450.f, 700.f, 250.f), BucketArea, 55.f, 8.f, 2.5f));
+		const FVector TableTop = S + FVector(0.f, 0.f, 120.f);
+		Cinematic->Shots.Add(MakeShot(S + FVector(0.f, 250.f, 500.f), TableTop, 45.f, 25.f, 2.5f));
 	}
 
 	Cinematic->StationCloseupShotIndex.Reset();
@@ -123,7 +128,9 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 	Cinematic->StationCloseupShotIndex.Add(EStationType::Checker,   4);
 	Cinematic->CheckerShotIndex = 4;
 	Cinematic->ResumeShotIndex  = 0;
-	Cinematic->LingerSecondsAfterIdle = 1.5f;  // hold the closeup briefly after Place before zooming out
+	// Zoom out the moment Working ends so the audience sees the bucket get carried from the
+	// table (instead of staying on the closeup through the carry).
+	Cinematic->LingerSecondsAfterIdle = 0.f;
 
 	Cinematic->BindToAssemblyLine(Director);
 	Cinematic->Start();

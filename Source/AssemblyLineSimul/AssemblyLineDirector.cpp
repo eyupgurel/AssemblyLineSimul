@@ -21,9 +21,10 @@ void UAssemblyLineDirector::RegisterRobot(AWorkerRobot* Robot)
 	UE_LOG(LogAssemblyLine, Log, TEXT("Registered robot for: %s"), *Robot->AssignedStation->DisplayName);
 
 	// Re-broadcast worker phase events with station type so observers (the cinematic camera)
-	// can react without binding to every individual worker.
-	Robot->OnPickedUp.AddLambda([this](EStationType St) { OnStationActive.Broadcast(St); });
-	Robot->OnPlaced.AddLambda([this](EStationType St) { OnStationIdle.Broadcast(St); });
+	// can react without binding to every individual worker. We listen to Working entry/exit
+	// (not PickUp/Place) so the closeup is reserved for the actual processing moment.
+	Robot->OnStartedWorking.AddLambda([this](EStationType St) { OnStationActive.Broadcast(St); });
+	Robot->OnFinishedWorking.AddLambda([this](EStationType St) { OnStationIdle.Broadcast(St); });
 }
 
 AStation* UAssemblyLineDirector::GetStation(EStationType Type) const
@@ -36,6 +37,11 @@ AWorkerRobot* UAssemblyLineDirector::GetRobot(EStationType Type) const
 {
 	if (const TObjectPtr<AWorkerRobot>* R = RobotByStation.Find(Type)) return R->Get();
 	return nullptr;
+}
+
+AWorkerRobot* UAssemblyLineDirector::GetRobotForStation(EStationType Type) const
+{
+	return GetRobot(Type);
 }
 
 void UAssemblyLineDirector::StartCycle()

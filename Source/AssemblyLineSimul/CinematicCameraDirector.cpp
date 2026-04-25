@@ -1,5 +1,6 @@
 #include "CinematicCameraDirector.h"
 #include "AssemblyLineDirector.h"
+#include "Bucket.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/LocalPlayer.h"
@@ -11,6 +12,7 @@
 #include "InputMappingContext.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
+#include "WorkerRobot.h"
 
 ACinematicCameraDirector::ACinematicCameraDirector()
 {
@@ -68,7 +70,9 @@ void ACinematicCameraDirector::BindToAssemblyLine(UAssemblyLineDirector* Directo
 	}
 	BoundDirector = Director;
 	if (!Director) return;
-	CheckerStartedHandle = Director->OnCheckerStarted.AddUObject(this, &ACinematicCameraDirector::HandleCheckerStarted);
+	// Intentionally NOT binding OnCheckerStarted: the early-anticipation jump made the
+	// Sorter->Checker handoff inconsistent with the other stations. Treat Checker like any
+	// other station — closeup only when its worker enters Working.
 	CycleCompletedHandle = Director->OnCycleCompleted.AddUObject(this, &ACinematicCameraDirector::HandleCycleResumed);
 	CycleRejectedHandle  = Director->OnCycleRejected .AddUObject(this, &ACinematicCameraDirector::HandleCycleResumed);
 	StationActiveHandle  = Director->OnStationActive .AddUObject(this, &ACinematicCameraDirector::HandleStationActive);
@@ -139,15 +143,50 @@ void ACinematicCameraDirector::HandleCheckerStarted()
 
 void ACinematicCameraDirector::HandleCycleResumed(ABucket* /*Bucket*/)
 {
-	JumpToShot(ResumeShotIndex);
+	// When LingerSecondsAfterIdle is set, the linger timer scheduled by OnStationIdle (which
+	// fires when the bucket is Placed, before this) is still counting; let it keep the closeup
+	// alive so the accept/reject FX play out on the same shot. Snap to wide only when linger
+	// is disabled (preserves test determinism).
+	if (LingerSecondsAfterIdle <= 0.f)
+	{
+		JumpToShot(ResumeShotIndex);
+	}
 }
 
 void ACinematicCameraDirector::HandleStationActive(EStationType StationType)
 {
-	if (const int32* Idx = StationCloseupShotIndex.Find(StationType))
+	const int32* Idx = StationCloseupShotIndex.Find(StationType);
+	if (!Idx) return;
+
+	// If the station's bucket is currently empty/hidden (Generator pre-fill), defer the
+	// zoom-in until OnContentsRevealed fires. Avoids closeup-on-empty-table.
+	UAssemblyLineDirector* Director = BoundDirector.Get();
+	if (Director)
 	{
-		JumpToShot(*Idx);
+		if (AWorkerRobot* Robot = Director->GetRobotForStation(StationType))
+		{
+			if (ABucket* Bucket = Robot->GetCurrentBucket())
+			{
+				if (Bucket->IsHidden())
+				{
+					const int32 ShotIdx = *Idx;
+					TWeakObjectPtr<ABucket> WeakBucket(Bucket);
+					TWeakObjectPtr<ACinematicCameraDirector> WeakSelf(this);
+					Bucket->OnContentsRevealed.AddLambda([WeakSelf, WeakBucket, ShotIdx]()
+					{
+						ACinematicCameraDirector* Self = WeakSelf.Get();
+						ABucket* B = WeakBucket.Get();
+						if (Self && B && !B->IsHidden())
+						{
+							Self->JumpToShot(ShotIdx);
+						}
+					});
+					return;
+				}
+			}
+		}
 	}
+	JumpToShot(*Idx);
 }
 
 void ACinematicCameraDirector::HandleStationIdle(EStationType /*StationType*/)

@@ -29,6 +29,9 @@ enum class EWorkerState : uint8
 
 DECLARE_DELEGATE_OneParam(FWorkerTaskComplete, ABucket* /*Bucket*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnWorkerPhase, EStationType /*StationType*/);
+// Aliases for clarity at the new fire sites (Working entry / Working exit).
+using FOnWorkerStartedWorking = FOnWorkerPhase;
+using FOnWorkerFinishedWorking = FOnWorkerPhase;
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API AWorkerRobot : public APawn
@@ -84,7 +87,7 @@ public:
 	float MoveSpeed = 350.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Robot")
-	float WorkDuration = 1.2f;
+	float WorkDuration = 3.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Robot")
 	TObjectPtr<AStation> AssignedStation;
@@ -99,7 +102,17 @@ public:
 	// Fires when this worker enters the Place state, with the station's type as payload.
 	FOnWorkerPhase OnPlaced;
 
+	// Fires when this worker enters the Working state (after walking to its work pos).
+	// Cinematic uses this — closeup reserved for the actual processing moment, not the carry.
+	FOnWorkerStartedWorking OnStartedWorking;
+
+	// Fires when this worker leaves the Working state (about to MoveToOutput).
+	FOnWorkerFinishedWorking OnFinishedWorking;
+
 	void AssignStation(AStation* Station);
+
+	// Public accessor for the bucket the worker is currently carrying / processing.
+	ABucket* GetCurrentBucket() const { return CurrentBucket; }
 
 	// Assigns ResolvedMesh to SkeletalBodyMesh and hides placeholders. Null is a no-op.
 	void ApplyBodyMesh(USkeletalMesh* ResolvedMesh);

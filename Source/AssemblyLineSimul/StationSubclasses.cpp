@@ -48,8 +48,25 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 	SpeakStreaming(FString::Printf(TEXT("Generated %d random numbers in [%d, %d]"),
 		BucketSize, MinValue, MaxValue));
 
-	FStationProcessResult R; R.bAccepted = true;
-	OnComplete.ExecuteIfBound(R);
+	// Hold for the full per-station duration before letting the worker move on, so the cinematic
+	// (which just zoomed in on OnContentsRevealed) has time to show the freshly-filled bucket
+	// for as long as other stations show their work.
+	UWorld* W = GetWorld();
+	if (!W)
+	{
+		FStationProcessResult R; R.bAccepted = true;
+		OnComplete.ExecuteIfBound(R);
+		return;
+	}
+	FStationProcessComplete CapturedCompletion = OnComplete;
+	FTimerHandle Th;
+	W->GetTimerManager().SetTimer(Th,
+		FTimerDelegate::CreateLambda([CapturedCompletion]()
+		{
+			FStationProcessResult R; R.bAccepted = true;
+			CapturedCompletion.ExecuteIfBound(R);
+		}),
+		20.0f, false);
 }
 
 // ---- Filter (primes) ----------------------------------------------------------

@@ -12,7 +12,7 @@ public:
 	AGeneratorStation();
 
 	UPROPERTY(EditAnywhere, Category = "Generator")
-	int32 BucketSize = 20;
+	int32 BucketSize = 10;
 
 	UPROPERTY(EditAnywhere, Category = "Generator")
 	int32 MinValue = 1;

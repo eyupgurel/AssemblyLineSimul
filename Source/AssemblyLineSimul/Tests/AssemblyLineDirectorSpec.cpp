@@ -48,7 +48,7 @@ void FAssemblyLineDirectorSpec::Define()
 
 	Describe("RegisterRobot", [this]()
 	{
-		It("re-broadcasts OnStationActive when a registered worker fires OnPickedUp", [this]()
+		It("re-broadcasts OnStationActive when a registered worker fires OnStartedWorking", [this]()
 		{
 			FScopedTestWorld TW(TEXT("DirectorSpec_RebroadcastActive"));
 			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
@@ -74,7 +74,7 @@ void FAssemblyLineDirectorSpec::Define()
 				bFired = true;
 			});
 
-			Worker->OnPickedUp.Broadcast(EStationType::Sorter);
+			Worker->OnStartedWorking.Broadcast(EStationType::Sorter);
 
 			TestTrue(TEXT("Director re-broadcast OnStationActive"), bFired);
 			TestEqual(TEXT("station type propagated"),

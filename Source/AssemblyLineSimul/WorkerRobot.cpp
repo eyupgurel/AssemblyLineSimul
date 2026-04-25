@@ -72,7 +72,7 @@ AWorkerRobot::AWorkerRobot()
 
 	CarrySocket = CreateDefaultSubobject<USceneComponent>(TEXT("CarrySocket"));
 	CarrySocket->SetupAttachment(RootComponent);
-	CarrySocket->SetRelativeLocation(FVector(60.f, 0.f, 0.f));
+	CarrySocket->SetRelativeLocation(FVector(130.f, 0.f, 0.f));
 
 	StateLabel = CreateDefaultSubobject<UTextRenderComponent>(TEXT("StateLabel"));
 	StateLabel->SetupAttachment(RootComponent);
@@ -176,8 +176,24 @@ void AWorkerRobot::EnterState(EWorkerState NewState)
 		break;
 	case EWorkerState::Working:
 		WorkTimer = 0.f;
+		// Move bucket from carry socket to the station's worktable so the worker is visually
+		// outside the bucket while processing.
+		if (CurrentBucket && AssignedStation && AssignedStation->BucketDockPoint)
+		{
+			CurrentBucket->AttachToComponent(AssignedStation->BucketDockPoint,
+				FAttachmentTransformRules::SnapToTargetIncludingScale);
+			CurrentBucket->SetActorRelativeLocation(FVector::ZeroVector);
+		}
+		if (AssignedStation) OnStartedWorking.Broadcast(AssignedStation->StationType);
 		break;
 	case EWorkerState::MoveToOutput:
+		// Worker picks the bucket back up from the worktable for delivery.
+		if (CurrentBucket && CarrySocket)
+		{
+			CurrentBucket->AttachToComponent(CarrySocket,
+				FAttachmentTransformRules::SnapToTargetIncludingScale);
+			CurrentBucket->SetActorRelativeLocation(FVector::ZeroVector);
+		}
 		if (ToSlotPtr.IsValid())
 		{
 			TargetLocation = ToSlotPtr->GetComponentLocation();
@@ -292,12 +308,17 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 										Result.bAccepted ? TEXT("PASS") : TEXT("REJECT"),
 										*Result.Reason)));
 							}
+							if (Self->AssignedStation)
+							{
+								Self->OnFinishedWorking.Broadcast(Self->AssignedStation->StationType);
+							}
 							Self->EnterState(EWorkerState::MoveToOutput);
 						}
 					}));
 			}
 			else
 			{
+				if (AssignedStation) OnFinishedWorking.Broadcast(AssignedStation->StationType);
 				EnterState(EWorkerState::MoveToOutput);
 			}
 			// Only park in Idle if the completion delegate hasn't already advanced us.

@@ -35,6 +35,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Station")
 	TObjectPtr<USceneComponent> WorkerStandPoint;
 
+	// Visible flat-top "workbench" mesh on top of the station; bucket sits here during Working.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Station")
+	TObjectPtr<UStaticMeshComponent> WorkTable;
+
+	// Attachment point on top of WorkTable — bucket is parented here during the Working phase.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Station")
+	TObjectPtr<USceneComponent> BucketDockPoint;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Station")
 	TObjectPtr<UTextRenderComponent> NameLabel;
 

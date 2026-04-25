@@ -115,9 +115,9 @@ void FCinematicCameraDirectorSpec::Define()
 
 	Describe("Reactive jumps", [this]()
 	{
-		It("jumps to CheckerShotIndex when AssemblyLineDirector broadcasts OnCheckerStarted", [this]()
+		It("does NOT jump on OnCheckerStarted (Checker treated like other stations)", [this]()
 		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_CheckerJump"));
+			FScopedTestWorld TW(TEXT("CinematicSpec_NoCheckerJump"));
 			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
 			TestNotNull(TEXT("AssemblyLineDirector subsystem available"), AsmDirector);
 			if (!AsmDirector) return;
@@ -127,10 +127,11 @@ void FCinematicCameraDirectorSpec::Define()
 			CinDirector->ResumeShotIndex = 0;
 			CinDirector->BindToAssemblyLine(AsmDirector);
 
+			const int32 InitialIdx = CinDirector->GetCurrentShotIndex();
 			AsmDirector->OnCheckerStarted.Broadcast();
 
-			TestEqual(TEXT("jumped to CheckerShotIndex"),
-				CinDirector->GetCurrentShotIndex(), CinDirector->CheckerShotIndex);
+			TestEqual(TEXT("shot index unchanged after OnCheckerStarted"),
+				CinDirector->GetCurrentShotIndex(), InitialIdx);
 		});
 
 		It("jumps to StationCloseupShotIndex[N] when Director broadcasts OnStationActive(N)", [this]()
