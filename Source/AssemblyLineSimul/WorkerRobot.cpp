@@ -285,11 +285,7 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 	case EWorkerState::Working:
 	{
 		WorkTimer += DeltaSeconds;
-		const float Required = (AssignedStation && AssignedStation->StationType == EStationType::Checker)
-			? FMath::Max(WorkDuration, 10.0f)  // LLM call (~2s) + streaming reveal (~6s) + buffer
-			: WorkDuration;
-
-		if (WorkTimer >= Required)
+		if (WorkTimer >= WorkDuration)
 		{
 			if (AssignedStation && CurrentBucket)
 			{

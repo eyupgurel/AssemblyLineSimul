@@ -148,9 +148,9 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 			B->RefreshContents();
 			Self->SpeakStreaming(FString::Printf(TEXT("Generated: %s"), *B->GetContentsString()));
 
-			// Hold for the full per-station duration before letting the worker move on, so the
-			// cinematic (which just zoomed in on OnContentsRevealed) has time to show the
-			// freshly-filled bucket as long as other stations show their work.
+			// Hold so the cinematic (which just zoomed in on OnContentsRevealed) has time
+			// to show the freshly-filled bucket, matching the Working-state wait other
+			// stations get from WorkDuration.
 			UWorld* W = Self->GetWorld();
 			if (!W)
 			{
@@ -165,7 +165,7 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 					FStationProcessResult R; R.bAccepted = true;
 					OnComplete.ExecuteIfBound(R);
 				}),
-				20.0f, false);
+				5.0f, false);
 		}));
 }
 

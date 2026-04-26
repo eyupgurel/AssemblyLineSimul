@@ -45,10 +45,9 @@ public:
 	TSubclassOf<ABucket> BucketClass;
 
 	// Per-station Working-state duration (seconds) applied to every spawned worker.
-	// Slows the demo so the audience can absorb each operation; tests are unaffected
-	// because they spawn workers directly without going through the GameMode.
+	// Tests spawn workers directly and are unaffected.
 	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
-	float StationWorkDuration = 20.f;
+	float StationWorkDuration = 5.f;
 
 	// Spawns 4 stations + 4 workers + cinematic camera and registers them with the Director.
 	// Public so tests can drive without running the full BeginPlay path.
