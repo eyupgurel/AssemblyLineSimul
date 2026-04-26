@@ -18,20 +18,29 @@ void UClaudeAPISubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UClaudeAPISubsystem::LoadAPIKey()
 {
-	const FString KeyPath = FPaths::ProjectSavedDir() / TEXT("AnthropicAPIKey.txt");
-	FString Raw;
-	if (FFileHelper::LoadFileToString(Raw, *KeyPath))
+	// Search in priority order:
+	//   1. Sandboxed Saved/  — where the editor and a manually-overridden packaged build look.
+	//   2. Build/Secrets/    — staged into the .app via DirectoriesToAlwaysStageAsNonUFS so
+	//                          packaged builds get the key without a manual post-package copy.
+	const TArray<FString> Candidates = {
+		FPaths::ProjectSavedDir() / TEXT("AnthropicAPIKey.txt"),
+		FPaths::ProjectDir() / TEXT("Build/Secrets/AnthropicAPIKey.txt"),
+	};
+
+	for (const FString& Path : Candidates)
 	{
-		APIKey = Raw.TrimStartAndEnd();
-		UE_LOG(LogClaudeAPI, Log, TEXT("Loaded Anthropic API key from %s (len=%d)"),
-			*KeyPath, APIKey.Len());
+		FString Raw;
+		if (FFileHelper::LoadFileToString(Raw, *Path))
+		{
+			APIKey = Raw.TrimStartAndEnd();
+			UE_LOG(LogClaudeAPI, Log, TEXT("Loaded Anthropic API key from %s (len=%d)"),
+				*Path, APIKey.Len());
+			return;
+		}
 	}
-	else
-	{
-		UE_LOG(LogClaudeAPI, Warning,
-			TEXT("No Anthropic API key found at %s — Checker station will fall back to local verification."),
-			*KeyPath);
-	}
+
+	UE_LOG(LogClaudeAPI, Warning,
+		TEXT("No Anthropic API key found in any candidate location — Checker station will fall back to local verification."));
 }
 
 void UClaudeAPISubsystem::SendMessage(const FString& Prompt, FClaudeComplete OnComplete)
