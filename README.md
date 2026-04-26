@@ -210,7 +210,7 @@ sequenceDiagram
 
   U->>GM: hold Space
   GM->>Cap: BeginRecord (M4A AAC)
-  Note over Cap: AVAudioRecorder writes to<br/>Saved/VoiceCapture/&lt;guid&gt;.m4a
+  Note over Cap: AVAudioRecorder writes to Saved/VoiceCapture/<guid>.m4a
   U->>GM: release Space
   GM->>Cap: EndRecord → bytes + mime
   GM->>AI: TranscribeAudio (multipart, language=en)
@@ -253,18 +253,18 @@ sequenceDiagram
   participant Ck as ACheckerStation
 
   U->>Chat: SendMessage(Filter, "only filter even numbers")
-  Chat->>CA: HTTP POST /v1/messages<br/>(role + Filter.GetEffectiveRule + bucket + history)
+  Chat->>CA: HTTP POST /v1/messages (role + Filter.GetEffectiveRule + bucket + history)
   CA-->>Chat: {"reply":"...","new_rule":"Keep only the even numbers"}
 
   Chat->>St: CurrentRule = "Keep only the even numbers"
   Chat->>St: OnRuleSetByChat()
-  Note right of Ck: Checker.bUseDerivedRule defaults true →<br/>GetEffectiveRule() recomposes from Generator+Filter+Sorter<br/>at read time, so Checker auto-sees the new Filter rule.
+  Note right of Ck: Checker.bUseDerivedRule defaults true; GetEffectiveRule recomposes from Generator+Filter+Sorter at read time so Checker auto-sees the new Filter rule.
   Chat->>Chat: OnRuleUpdated.Broadcast(Filter, NewRule)
   Chat->>Chat: UE_LOG(Display) "[Filter] CurrentRule updated → ..."
   Chat->>St: SpeakAloud("Filter here. <reply>")
   Chat->>St: SpeakAloud("Rule updated. From now on I will <new rule>.")
 
-  Note over St: Next bucket through Filter:<br/>ProcessBucket builds prompt with the new EffectiveRule,<br/>logs "[Filter] ProcessBucket using rule: ..."
+  Note over St: Next bucket through Filter — ProcessBucket builds prompt with the new EffectiveRule and logs "[Filter] ProcessBucket using rule: ..."
 ```
 
 ### Cinematic camera state machine
@@ -273,14 +273,14 @@ sequenceDiagram
 stateDiagram-v2
   [*] --> WideShot
   WideShot --> StationCloseup: OnStationActive(N)
-  StationCloseup --> WideShot: OnStationIdle(N)<br/>(LingerSecondsAfterIdle)
+  StationCloseup --> WideShot: OnStationIdle(N) after LingerSecondsAfterIdle
 
   StationCloseup --> Chase: OnCycleRejected(bucket)
-  WideShot --> Chase: OnCycleRejected(bucket)<br/>or OnCycleCompleted(bucket)
-  StationCloseup --> Chase: OnCycleCompleted(bucket)<br/>(PASS victory beat)
+  WideShot --> Chase: OnCycleRejected or OnCycleCompleted (bucket)
+  StationCloseup --> Chase: OnCycleCompleted(bucket) — PASS victory beat
 
   Chase --> StationCloseup: OnStationActive(rework station)
-  Chase --> WideShot: ChaseTarget invalidated<br/>(bucket destroyed)
+  Chase --> WideShot: ChaseTarget invalidated (bucket destroyed)
   Chase --> Chase: OnCycleRejected (target updates)
 
   note right of Chase
