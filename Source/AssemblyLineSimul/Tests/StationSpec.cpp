@@ -3,6 +3,8 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "AgentChatSubsystem.h"
+#include "Engine/GameInstance.h"
 #include "Station.h"
 #include "StationSubclasses.h"
 #include "StationTalkWidget.h"
@@ -95,6 +97,31 @@ void FStationSpec::Define()
 			TestNotNull(TEXT("widget present"), W);
 			TestTrue(TEXT("widget is the configured derived class"),
 				W && W->IsA<UTestDerivedTalkWidget>());
+		});
+	});
+
+	Describe("SpeakAloud", [this]()
+	{
+		It("routes the text BOTH onto the talk panel AND through the chat "
+		   "subsystem's macOS-`say` pipeline (audible output)", [this]()
+		{
+			FScopedTestWorld TW(TEXT("StationSpec_SpeakAloud"));
+			AStation* Station = SpawnStation(TW.World);
+
+			// Test environments don't have a real GameInstance attached to the world,
+			// so inject the chat subsystem directly so SpeakAloud can reach it.
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Chat = NewObject<UAgentChatSubsystem>(GI);
+			Station->SetChatSubsystemForTesting(Chat);
+
+			TestEqual(TEXT("LastSpoken starts empty"),
+				Chat->LastSpokenForTesting, FString());
+
+			Station->SpeakAloud(TEXT("REJECT: 9 is not prime; Filter let it through."));
+
+			TestEqual(TEXT("LastSpoken received the verdict (TTS path invoked)"),
+				Chat->LastSpokenForTesting,
+				FString(TEXT("REJECT: 9 is not prime; Filter let it through.")));
 		});
 	});
 }

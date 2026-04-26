@@ -1,4 +1,5 @@
 #include "Station.h"
+#include "AgentChatSubsystem.h"
 #include "Bucket.h"
 #include "StationTalkWidget.h"
 #include "Camera/PlayerCameraManager.h"
@@ -7,6 +8,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
@@ -168,6 +170,29 @@ void AStation::SpeakStreaming(const FString& Text, float CharsPerSecond)
 		W->GetTimerManager().ClearTimer(StreamTimer);
 		const float Interval = (CharsPerSecond > 0.f) ? 1.f / CharsPerSecond : 0.03f;
 		W->GetTimerManager().SetTimer(StreamTimer, this, &AStation::TickStream, Interval, true);
+	}
+}
+
+void AStation::SpeakAloud(const FString& Text, float CharsPerSecond)
+{
+	// Panel side: same streaming reveal SpeakStreaming would do.
+	SpeakStreaming(Text, CharsPerSecond);
+
+	// TTS side: route through the chat subsystem's macOS-`say` pipeline.
+	UAgentChatSubsystem* Chat = TestChatOverride;
+	if (!Chat)
+	{
+		if (UWorld* W = GetWorld())
+		{
+			if (UGameInstance* GI = W->GetGameInstance())
+			{
+				Chat = GI->GetSubsystem<UAgentChatSubsystem>();
+			}
+		}
+	}
+	if (Chat)
+	{
+		Chat->SpeakResponse(Text);
 	}
 }
 

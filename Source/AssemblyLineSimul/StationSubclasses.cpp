@@ -448,7 +448,11 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 
 			if (ACheckerStation* Self = WeakThis.Get())
 			{
-				Self->SpeakStreaming(FString::Printf(TEXT("[%s] %s"),
+				// SpeakAloud → talk panel + macOS `say`. The verdict path bypasses
+				// AgentChatSubsystem::HandleClaudeResponse, so without this the
+				// Checker would silently flash red while the audience waits for
+				// an explanation.
+				Self->SpeakAloud(FString::Printf(TEXT("[%s] %s"),
 					R.bAccepted ? TEXT("PASS") : TEXT("REJECT"), *R.Reason));
 			}
 			OnComplete.ExecuteIfBound(R);

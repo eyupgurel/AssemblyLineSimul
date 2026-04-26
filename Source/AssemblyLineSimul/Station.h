@@ -6,6 +6,7 @@
 #include "Station.generated.h"
 
 class ABucket;
+class UAgentChatSubsystem;
 class UPointLightComponent;
 class UStaticMeshComponent;
 class USceneComponent;
@@ -96,6 +97,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Station")
 	void SpeakStreaming(const FString& Text, float CharsPerSecond = 35.f);
 
+	// Like SpeakStreaming but ALSO routes the text through the chat subsystem's
+	// macOS-`say` pipeline so the audience hears it (used by the Checker for its
+	// PASS/REJECT verdict, where the verdict path doesn't go through chat).
+	UFUNCTION(BlueprintCallable, Category = "Station")
+	void SpeakAloud(const FString& Text, float CharsPerSecond = 35.f);
+
+	// Tests don't construct a real GameInstance, so they inject the chat
+	// subsystem directly. SpeakAloud uses this override when present, otherwise
+	// looks up via GetWorld()->GetGameInstance()->GetSubsystem<>().
+	void SetChatSubsystemForTesting(UAgentChatSubsystem* Chat) { TestChatOverride = Chat; }
+
 	UFUNCTION(BlueprintCallable, Category = "Station")
 	void ClearTalk();
 
@@ -113,4 +125,7 @@ private:
 	void TickStream();
 	void BillboardLabel(USceneComponent* Comp);
 	void WriteTalkText(const FString& Text);
+
+	UPROPERTY()
+	TObjectPtr<UAgentChatSubsystem> TestChatOverride;
 };
