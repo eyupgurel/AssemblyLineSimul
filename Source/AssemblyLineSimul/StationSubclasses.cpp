@@ -92,6 +92,9 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 		return;
 	}
 
+	const FString EffectiveRule = GetEffectiveRule();
+	UE_LOG(LogStation, Display,
+		TEXT("[Generator] ProcessBucket using rule: \"%s\""), *EffectiveRule);
 	const FString Prompt = FString::Printf(
 		TEXT("You are the Generator agent on an assembly line. Apply this rule to produce a fresh ")
 		TEXT("bucket of integers:\n\n")
@@ -99,9 +102,9 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
 		TEXT("{\"result\":[<integers>]}\n")
 		TEXT("Example: {\"result\":[3,17,42,7,91]}"),
-		*CurrentRule);
+		*EffectiveRule);
 
-	SpeakStreaming(FString::Printf(TEXT("Generating per rule: %s"), *CurrentRule));
+	SpeakStreaming(FString::Printf(TEXT("Generating per rule: %s"), *EffectiveRule));
 
 	TWeakObjectPtr<AGeneratorStation> WeakThis(this);
 	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
@@ -179,6 +182,10 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 	}
 
 	const FString Input = Bucket->GetContentsString();
+	const FString EffectiveRule = GetEffectiveRule();
+	UE_LOG(LogStation, Display,
+		TEXT("[Filter] ProcessBucket using rule: \"%s\" — input: %s"),
+		*EffectiveRule, *Input);
 	const FString Prompt = FString::Printf(
 		TEXT("You are the Filter agent on an assembly line. Apply this rule to the input bucket ")
 		TEXT("and return the filtered bucket. Preserve the original order of the kept items.\n\n")
@@ -186,9 +193,9 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 		TEXT("INPUT: [%s]\n\n")
 		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
 		TEXT("{\"result\":[<integers>]}"),
-		*CurrentRule, *Input);
+		*EffectiveRule, *Input);
 
-	SpeakStreaming(FString::Printf(TEXT("Filtering [%s] per rule: %s"), *Input, *CurrentRule));
+	SpeakStreaming(FString::Printf(TEXT("Filtering [%s] per rule: %s"), *Input, *EffectiveRule));
 
 	TWeakObjectPtr<AFilterStation> WeakThis(this);
 	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
@@ -250,6 +257,10 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 	}
 
 	const FString Input = Bucket->GetContentsString();
+	const FString EffectiveRule = GetEffectiveRule();
+	UE_LOG(LogStation, Display,
+		TEXT("[Sorter] ProcessBucket using rule: \"%s\" — input: %s"),
+		*EffectiveRule, *Input);
 	const FString Prompt = FString::Printf(
 		TEXT("You are the Sorter agent on an assembly line. Apply this rule to the input bucket ")
 		TEXT("and return the reordered bucket (do not add or remove values, only reorder).\n\n")
@@ -257,9 +268,9 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 		TEXT("INPUT: [%s]\n\n")
 		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
 		TEXT("{\"result\":[<integers>]}"),
-		*CurrentRule, *Input);
+		*EffectiveRule, *Input);
 
-	SpeakStreaming(FString::Printf(TEXT("Sorting [%s] per rule: %s"), *Input, *CurrentRule));
+	SpeakStreaming(FString::Printf(TEXT("Sorting [%s] per rule: %s"), *Input, *EffectiveRule));
 
 	TWeakObjectPtr<ASorterStation> WeakThis(this);
 	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
@@ -360,6 +371,10 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 
 	UClaudeAPISubsystem* Claude = GetClaude(this);
 	const FString Numbers = Bucket->GetContentsString();
+	const FString EffectiveRule = GetEffectiveRule();
+	UE_LOG(LogStation, Display,
+		TEXT("[Checker] ProcessBucket using rule: \"%s\" — input: %s"),
+		*EffectiveRule, *Numbers);
 	const FString Prompt = FString::Printf(
 		TEXT("You are the QA / Checker agent on an assembly line. Verify the bucket against your rule.\n\n")
 		TEXT("RULE: %s\n")
@@ -377,7 +392,7 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 		TEXT("Name EVERY offending value (or pair), explain WHY each one breaks the rule, ")
 		TEXT("and call out which prior station was responsible. Be specific and a little ")
 		TEXT("indignant — the audience needs to understand exactly what went wrong."),
-		*GetEffectiveRule(), *Numbers);
+		*EffectiveRule, *Numbers);
 
 	SpeakStreaming(FString::Printf(TEXT("Inspecting bucket: %s"), *Numbers));
 

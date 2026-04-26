@@ -37,6 +37,56 @@ void FAgentChatSubsystemSpec::Define()
 		});
 	});
 
+	Describe("OnRuleUpdated", [this]()
+	{
+		It("broadcasts with (StationType, NewRule) when a Claude reply contains "
+		   "a non-empty new_rule (Story 17 AC17.1)", [this]()
+		{
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Sub = NewObject<UAgentChatSubsystem>(GI);
+			TestNotNull(TEXT("subsystem instantiated"), Sub);
+			if (!Sub) return;
+
+			int32 BroadcastCount = 0;
+			EStationType GotStation = EStationType::Generator;
+			FString GotRule;
+			Sub->OnRuleUpdated.AddLambda([&](EStationType S, const FString& R)
+			{
+				++BroadcastCount;
+				GotStation = S;
+				GotRule = R;
+			});
+
+			// Synthesise the JSON body that would have come back from Claude after
+			// the user said "from now on only keep the even numbers".
+			const FString FakeReply = TEXT(
+				"{\"reply\":\"Got it, evens only from now on.\","
+				"\"new_rule\":\"Keep only the even numbers; drop everything else.\"}");
+			Sub->HandleClaudeResponse(EStationType::Filter, /*bSuccess=*/true, FakeReply);
+
+			TestEqual(TEXT("OnRuleUpdated fired exactly once"), BroadcastCount, 1);
+			TestEqual(TEXT("payload station is Filter"), GotStation, EStationType::Filter);
+			TestEqual(TEXT("payload rule matches Claude's new_rule"),
+				GotRule,
+				FString(TEXT("Keep only the even numbers; drop everything else.")));
+		});
+
+		It("does NOT broadcast when new_rule is null/missing (plain chat reply)", [this]()
+		{
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Sub = NewObject<UAgentChatSubsystem>(GI);
+			if (!Sub) return;
+
+			int32 BroadcastCount = 0;
+			Sub->OnRuleUpdated.AddLambda([&](EStationType, const FString&) { ++BroadcastCount; });
+
+			Sub->HandleClaudeResponse(EStationType::Filter, /*bSuccess=*/true,
+				TEXT("{\"reply\":\"hello there\",\"new_rule\":null}"));
+
+			TestEqual(TEXT("no broadcast for null new_rule"), BroadcastCount, 0);
+		});
+	});
+
 	Describe("SpeakResponse", [this]()
 	{
 		It("records the input into LastSpokenForTesting so external systems "

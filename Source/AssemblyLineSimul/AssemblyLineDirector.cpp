@@ -110,6 +110,37 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 {
 	if (!Bucket) return;
 
+	// Story 17 AC17.7: any non-Generator station that ends up with an empty
+	// bucket (Filter eliminated everything, etc.) triggers a recycle — destroy
+	// the bucket and start a fresh Generator cycle. Generator emptying its own
+	// output is a separate (LLM-misbehavior) concern — let it fall through to
+	// Filter, which will then recycle on its empty output.
+	if (Type != EStationType::Generator && Bucket->Contents.Num() == 0)
+	{
+		UE_LOG(LogAssemblyLine, Display,
+			TEXT("RECYCLE: bucket empty after %d — destroying and starting fresh cycle."),
+			(int32)Type);
+		if (AStation* Source = GetStation(Type))
+		{
+			Source->SpeakAloud(TEXT("Bucket empty after rework — recycling. Starting a fresh cycle."));
+		}
+		OnCycleRecycled.Broadcast(Bucket);
+
+		UWorld* World = GetWorld();
+		if (World)
+		{
+			FTimerHandle Th;
+			World->GetTimerManager().SetTimer(Th,
+				FTimerDelegate::CreateLambda([this, Bucket]()
+				{
+					if (Bucket && IsValid(Bucket)) Bucket->Destroy();
+					StartCycle();
+				}),
+				DelayBetweenCycles, false);
+		}
+		return;
+	}
+
 	switch (Type)
 	{
 	case EStationType::Generator:

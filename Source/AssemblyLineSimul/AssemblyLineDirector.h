@@ -12,6 +12,7 @@ class AWorkerRobot;
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleCompleted, ABucket* /*Bucket*/);
 DECLARE_MULTICAST_DELEGATE(FOnAssemblyLineCheckerStarted);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleRejected, ABucket* /*Bucket*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleRecycled, ABucket* /*Bucket*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineStationActive, EStationType /*StationType*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineStationIdle, EStationType /*StationType*/);
 
@@ -36,6 +37,11 @@ public:
 
 	// Fires when the Checker rejects a bucket (after which it gets sent back to a prior station).
 	FOnAssemblyLineCycleRejected OnCycleRejected;
+
+	// Fires when a station's ProcessBucket left the bucket empty (e.g. Filter eliminated
+	// every item during rework). Director destroys the bucket and starts a fresh cycle.
+	// Story 17 AC17.7.
+	FOnAssemblyLineCycleRecycled OnCycleRecycled;
 
 	// Public accessor for the cinematic to introspect a station's worker (and therefore its
 	// CurrentBucket). Returns nullptr if the station type isn't registered.
@@ -62,6 +68,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
 	TSubclassOf<ABucket> BucketClass = nullptr;
 
+	// Public so unit specs can simulate a worker completion without spinning up a
+	// full FSM (e.g. test the empty-bucket recycle path).
+	void OnRobotDoneAt(EStationType Type, ABucket* Bucket);
+
 private:
 	UPROPERTY()
 	TMap<EStationType, TObjectPtr<AStation>> StationByType;
@@ -73,5 +83,4 @@ private:
 	AWorkerRobot* GetRobot(EStationType Type) const;
 
 	void DispatchToStation(EStationType Type, ABucket* Bucket, AStation* SourceStation);
-	void OnRobotDoneAt(EStationType Type, ABucket* Bucket);
 };

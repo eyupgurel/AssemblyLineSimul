@@ -134,11 +134,22 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 				{
 					Station->CurrentRule = NewRule;
 					Station->OnRuleSetByChat();
-					UE_LOG(LogAgentChat, Log, TEXT("[%s] CurrentRule updated -> %s"),
-						*StationTypeName(StationType), *NewRule);
 				}
 			}
 		}
+		// Display-level so it's obvious in the editor console — Story 17 AC17.1.
+		UE_LOG(LogAgentChat, Display, TEXT("[%s] CurrentRule updated → \"%s\""),
+			*StationTypeName(StationType), *NewRule);
+
+		// Broadcast for subscribers (UI banners, telemetry, tests).
+		OnRuleUpdated.Broadcast(StationType, NewRule);
+
+		// Audible + visible confirmation that the rule actually took effect — AC17.2.
+		// Spoken in addition to Claude's conversational `reply` so the audience hears
+		// the change even if they missed the chat reply.
+		const FString RuleConfirm = FString::Printf(
+			TEXT("Rule updated. From now on I will %s"), *NewRule);
+		SpeakResponse(RuleConfirm);
 	}
 
 	// Prepend "<AgentName> here. " so the spoken reply identifies who's talking and
