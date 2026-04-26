@@ -134,7 +134,7 @@ graph TB
 
   subgraph Audio bridge
     MacAudio[UMacAudioCapture<br/>AVFoundation Obj-C++]
-    Say[/usr/bin/say]
+    Say["/usr/bin/say (macOS TTS)"]
   end
 
   subgraph External
