@@ -408,68 +408,71 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 	Claude->SendMessage(Prompt,
 		FClaudeComplete::CreateLambda([WeakThis, OnComplete](bool bSuccess, const FString& Response)
 		{
-			FStationProcessResult R;
-			if (!bSuccess)
-			{
-				R.bAccepted = true;
-				R.Reason = TEXT("LLM unreachable, accepting by default");
-				if (ACheckerStation* Self = WeakThis.Get())
-				{
-					Self->SpeakStreaming(FString::Printf(TEXT("LLM unreachable — %s"), *Response));
-				}
-				OnComplete.ExecuteIfBound(R);
-				return;
-			}
-
-			UE_LOG(LogStation, Log, TEXT("Checker raw response: %s"), *Response);
-
-			FString JsonStr;
-			TSharedPtr<FJsonObject> Root;
-			if (ExtractJsonObject(Response, JsonStr))
-			{
-				const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
-				FJsonSerializer::Deserialize(Reader, Root);
-			}
-
-			FString Verdict, Reason, SendBack;
-			if (Root.IsValid())
-			{
-				Root->TryGetStringField(TEXT("verdict"), Verdict);
-				Root->TryGetStringField(TEXT("reason"), Reason);
-				Root->TryGetStringField(TEXT("send_back_to"), SendBack);
-			}
-			else
-			{
-				UE_LOG(LogStation, Warning,
-					TEXT("Checker JSON parse failed; defaulting to accept. Raw: %s"), *Response);
-			}
-
-			// Treat any "pass"/"accept"/"ok" variant as accept. If verdict is missing entirely
-			// (parse failure or empty field), default to accept so a flaky LLM reply doesn't
-			// reject an otherwise-valid bucket.
-			const FString VLower = Verdict.ToLower();
-			const bool bExplicitReject =
-				VLower.Contains(TEXT("reject")) || VLower.Contains(TEXT("fail"));
-			R.bAccepted = !bExplicitReject;
-			R.Reason = Reason.IsEmpty() ? TEXT("(no reason)") : Reason;
-			if (SendBack.Equals(TEXT("Sorter"), ESearchCase::IgnoreCase))
-			{
-				R.SendBackTo = EStationType::Sorter;
-			}
-			else
-			{
-				R.SendBackTo = EStationType::Filter;
-			}
-
 			if (ACheckerStation* Self = WeakThis.Get())
 			{
-				// SpeakAloud → talk panel + macOS `say`. The verdict path bypasses
-				// AgentChatSubsystem::HandleClaudeResponse, so without this the
-				// Checker would silently flash red while the audience waits for
-				// an explanation.
-				Self->SpeakAloud(FString::Printf(TEXT("[%s] %s"),
-					R.bAccepted ? TEXT("PASS") : TEXT("REJECT"), *R.Reason));
+				Self->HandleVerdictReply(bSuccess, Response, OnComplete);
 			}
-			OnComplete.ExecuteIfBound(R);
 		}));
+}
+
+void ACheckerStation::HandleVerdictReply(bool bSuccess, const FString& Response, FStationProcessComplete OnComplete)
+{
+	FStationProcessResult R;
+	if (!bSuccess)
+	{
+		R.bAccepted = true;
+		R.Reason = TEXT("LLM unreachable, accepting by default");
+		// SpeakAloud (panel + TTS) so the audience hears the fallback even when
+		// Claude is down — Story 15 + the new "no silent verdicts" contract.
+		SpeakAloud(FString::Printf(TEXT("LLM unreachable — %s"), *Response));
+		OnComplete.ExecuteIfBound(R);
+		return;
+	}
+
+	UE_LOG(LogStation, Log, TEXT("Checker raw response: %s"), *Response);
+
+	FString JsonStr;
+	TSharedPtr<FJsonObject> Root;
+	if (ExtractJsonObject(Response, JsonStr))
+	{
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
+		FJsonSerializer::Deserialize(Reader, Root);
+	}
+
+	FString Verdict, Reason, SendBack;
+	if (Root.IsValid())
+	{
+		Root->TryGetStringField(TEXT("verdict"), Verdict);
+		Root->TryGetStringField(TEXT("reason"), Reason);
+		Root->TryGetStringField(TEXT("send_back_to"), SendBack);
+	}
+	else
+	{
+		UE_LOG(LogStation, Warning,
+			TEXT("Checker JSON parse failed; defaulting to accept. Raw: %s"), *Response);
+	}
+
+	// Treat any "pass"/"accept"/"ok" variant as accept. If verdict is missing entirely
+	// (parse failure or empty field), default to accept so a flaky LLM reply doesn't
+	// reject an otherwise-valid bucket.
+	const FString VLower = Verdict.ToLower();
+	const bool bExplicitReject =
+		VLower.Contains(TEXT("reject")) || VLower.Contains(TEXT("fail"));
+	R.bAccepted = !bExplicitReject;
+	R.Reason = Reason.IsEmpty() ? TEXT("(no reason)") : Reason;
+	if (SendBack.Equals(TEXT("Sorter"), ESearchCase::IgnoreCase))
+	{
+		R.SendBackTo = EStationType::Sorter;
+	}
+	else
+	{
+		R.SendBackTo = EStationType::Filter;
+	}
+
+	// SpeakAloud → talk panel + macOS `say`. The verdict path bypasses
+	// AgentChatSubsystem::HandleClaudeResponse, so without this the Checker
+	// would silently flash red while the audience waits for an explanation.
+	SpeakAloud(FString::Printf(TEXT("[%s] %s"),
+		R.bAccepted ? TEXT("PASS") : TEXT("REJECT"), *R.Reason));
+	OnComplete.ExecuteIfBound(R);
 }

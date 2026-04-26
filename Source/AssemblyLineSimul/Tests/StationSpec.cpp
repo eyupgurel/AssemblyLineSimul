@@ -100,6 +100,83 @@ void FStationSpec::Define()
 		});
 	});
 
+	Describe("Checker verdict-speak contract (PASS and REJECT both audible)", [this]()
+	{
+		It("speaks the PASS verdict aloud through the chat subsystem (TTS), not just the panel", [this]()
+		{
+			FScopedTestWorld TW(TEXT("StationSpec_CheckerPassSpeaks"));
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ACheckerStation* Checker = TW.World->SpawnActor<ACheckerStation>(
+				ACheckerStation::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			TestNotNull(TEXT("checker spawned"), Checker);
+			if (!Checker) return;
+
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Chat = NewObject<UAgentChatSubsystem>(GI);
+			Checker->SetChatSubsystemForTesting(Chat);
+
+			FStationProcessComplete Sink;  // unbound — we only care about the speak side
+			Checker->HandleVerdictReply(/*bSuccess=*/true,
+				TEXT("{\"verdict\":\"pass\",\"reason\":\"All four primes sorted ascending.\",\"send_back_to\":null}"),
+				Sink);
+
+			TestTrue(TEXT("PASS reached the macOS-say pipeline"),
+				Chat->LastSpokenForTesting.StartsWith(TEXT("[PASS]")));
+			TestTrue(TEXT("PASS reason embedded"),
+				Chat->LastSpokenForTesting.Contains(TEXT("All four primes sorted ascending.")));
+		});
+
+		It("speaks the REJECT verdict aloud (the bug the operator hit) — verbose "
+		   "complaint reaches macOS-say even when long", [this]()
+		{
+			FScopedTestWorld TW(TEXT("StationSpec_CheckerRejectSpeaks"));
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ACheckerStation* Checker = TW.World->SpawnActor<ACheckerStation>(
+				ACheckerStation::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!Checker) return;
+
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Chat = NewObject<UAgentChatSubsystem>(GI);
+			Checker->SetChatSubsystemForTesting(Chat);
+
+			const FString FakeReject = TEXT(
+				"{\"verdict\":\"reject\","
+				"\"reason\":\"7, 17, 23 and 41 are all odd primes — Filter was supposed to keep only even numbers but let every one of them through. Sending back to Filter for rework.\","
+				"\"send_back_to\":\"Filter\"}");
+			FStationProcessComplete Sink;
+			Checker->HandleVerdictReply(/*bSuccess=*/true, FakeReject, Sink);
+
+			TestTrue(TEXT("REJECT reached the macOS-say pipeline"),
+				Chat->LastSpokenForTesting.StartsWith(TEXT("[REJECT]")));
+			TestTrue(TEXT("REJECT verbose reason embedded — every offending value named"),
+				Chat->LastSpokenForTesting.Contains(TEXT("7, 17, 23 and 41")));
+			TestTrue(TEXT("responsible station called out in the reason"),
+				Chat->LastSpokenForTesting.Contains(TEXT("Filter")));
+		});
+
+		It("speaks the LLM-unreachable fallback aloud too (no silent failures)", [this]()
+		{
+			FScopedTestWorld TW(TEXT("StationSpec_CheckerUnreachableSpeaks"));
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ACheckerStation* Checker = TW.World->SpawnActor<ACheckerStation>(
+				ACheckerStation::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!Checker) return;
+
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Chat = NewObject<UAgentChatSubsystem>(GI);
+			Checker->SetChatSubsystemForTesting(Chat);
+
+			FStationProcessComplete Sink;
+			Checker->HandleVerdictReply(/*bSuccess=*/false, TEXT("HTTP failure"), Sink);
+
+			TestTrue(TEXT("Unreachable fallback reached macOS-say"),
+				Chat->LastSpokenForTesting.Contains(TEXT("LLM unreachable")));
+		});
+	});
+
 	Describe("SpeakAloud", [this]()
 	{
 		It("routes the text BOTH onto the talk panel AND through the chat "

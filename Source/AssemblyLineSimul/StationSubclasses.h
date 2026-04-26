@@ -49,6 +49,12 @@ public:
 	ACheckerStation();
 	virtual void ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete) override;
 
+	// Public seam for the Claude completion handler — production code routes
+	// through the lambda inside ProcessBucket; tests call this directly with
+	// synthetic JSON to lock down the speak-on-PASS / speak-on-REJECT contract
+	// without spinning up a real Claude HTTP round-trip.
+	void HandleVerdictReply(bool bSuccess, const FString& Response, FStationProcessComplete OnComplete);
+
 	// When true, GetEffectiveRule composes Generator + Filter + Sorter rules at read time
 	// so chat-driven changes upstream automatically reach the Checker. Flipped to false
 	// the first time the user gives the Checker its own rule via chat; toggle in the editor
