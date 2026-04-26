@@ -31,11 +31,19 @@ public:
 
 	FOnAgentResponded OnAgentResponded;
 
+	// Public so external systems (e.g. the voice-hail handshake in the GameMode)
+	// can push arbitrary text through the same macOS `say` pipeline used for chat
+	// replies. No-op on non-Mac platforms. Records the last input into
+	// LastSpokenForTesting so specs can assert the audible path was invoked.
+	void SpeakResponse(const FString& Text) const;
+
+	// Inspection hook for tests — set every time SpeakResponse is called.
+	mutable FString LastSpokenForTesting;
+
 private:
 	TMap<EStationType, TArray<FAgentChatMessage>> Histories;
 
 	void HandleClaudeResponse(EStationType StationType, bool bSuccess, const FString& Response);
-	void SpeakResponse(const FString& Text) const;
 	FString GetRoleDescription(EStationType StationType) const;
 	FString GetCurrentRule(EStationType StationType) const;
 	FString GetCurrentBucketContents(EStationType StationType) const;

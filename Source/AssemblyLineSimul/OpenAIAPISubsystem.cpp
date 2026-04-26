@@ -49,6 +49,48 @@ void UOpenAIAPISubsystem::LoadAPIKey()
 		TEXT("No OpenAI API key found in any candidate location — voice transcription disabled."));
 }
 
+TArray<uint8> UOpenAIAPISubsystem::BuildWhisperMultipartBody(const FString& Boundary,
+                                                              const FString& InModel,
+                                                              const FString& Language,
+                                                              const FString& MimeType,
+                                                              const FString& FilenameHint,
+                                                              const TArray<uint8>& AudioBytes)
+{
+	const FString CRLF = TEXT("\r\n");
+	TArray<uint8> Body;
+	Body.Reserve(AudioBytes.Num() + 1024);
+
+	// --- model field ---
+	AppendAscii(Body, FString::Printf(TEXT("--%s%s"), *Boundary, *CRLF));
+	AppendAscii(Body, FString::Printf(TEXT("Content-Disposition: form-data; name=\"model\"%s%s"), *CRLF, *CRLF));
+	AppendAscii(Body, FString::Printf(TEXT("%s%s"), *InModel, *CRLF));
+
+	// --- response_format field ---
+	AppendAscii(Body, FString::Printf(TEXT("--%s%s"), *Boundary, *CRLF));
+	AppendAscii(Body, FString::Printf(TEXT("Content-Disposition: form-data; name=\"response_format\"%s%s"), *CRLF, *CRLF));
+	AppendAscii(Body, FString::Printf(TEXT("json%s"), *CRLF));
+
+	// --- language field (force language so Whisper doesn't auto-detect locale) ---
+	AppendAscii(Body, FString::Printf(TEXT("--%s%s"), *Boundary, *CRLF));
+	AppendAscii(Body, FString::Printf(TEXT("Content-Disposition: form-data; name=\"language\"%s%s"), *CRLF, *CRLF));
+	AppendAscii(Body, FString::Printf(TEXT("%s%s"), *Language, *CRLF));
+
+	// --- file field (binary) ---
+	const FString SafeFilename = FilenameHint.IsEmpty() ? FString(TEXT("audio.wav")) : FilenameHint;
+	const FString SafeMime     = MimeType.IsEmpty()     ? FString(TEXT("audio/wav")) : MimeType;
+	AppendAscii(Body, FString::Printf(TEXT("--%s%s"), *Boundary, *CRLF));
+	AppendAscii(Body, FString::Printf(TEXT("Content-Disposition: form-data; name=\"file\"; filename=\"%s\"%s"),
+		*SafeFilename, *CRLF));
+	AppendAscii(Body, FString::Printf(TEXT("Content-Type: %s%s%s"), *SafeMime, *CRLF, *CRLF));
+	Body.Append(AudioBytes);
+	AppendAscii(Body, CRLF);
+
+	// --- closing boundary ---
+	AppendAscii(Body, FString::Printf(TEXT("--%s--%s"), *Boundary, *CRLF));
+
+	return Body;
+}
+
 void UOpenAIAPISubsystem::TranscribeAudio(const TArray<uint8>& AudioBytes,
                                           const FString& MimeType,
                                           const FString& FilenameHint,
@@ -67,33 +109,8 @@ void UOpenAIAPISubsystem::TranscribeAudio(const TArray<uint8>& AudioBytes,
 
 	const FString Boundary = FString::Printf(TEXT("----AssemblyLineBoundary%s"),
 		*FGuid::NewGuid().ToString(EGuidFormats::Digits));
-	const FString CRLF = TEXT("\r\n");
-
-	TArray<uint8> Body;
-	Body.Reserve(AudioBytes.Num() + 1024);
-
-	// --- model field ---
-	AppendAscii(Body, FString::Printf(TEXT("--%s%s"), *Boundary, *CRLF));
-	AppendAscii(Body, FString::Printf(TEXT("Content-Disposition: form-data; name=\"model\"%s%s"), *CRLF, *CRLF));
-	AppendAscii(Body, FString::Printf(TEXT("%s%s"), *Model, *CRLF));
-
-	// --- response_format field ---
-	AppendAscii(Body, FString::Printf(TEXT("--%s%s"), *Boundary, *CRLF));
-	AppendAscii(Body, FString::Printf(TEXT("Content-Disposition: form-data; name=\"response_format\"%s%s"), *CRLF, *CRLF));
-	AppendAscii(Body, FString::Printf(TEXT("json%s"), *CRLF));
-
-	// --- file field (binary) ---
-	const FString SafeFilename = FilenameHint.IsEmpty() ? FString(TEXT("audio.wav")) : FilenameHint;
-	const FString SafeMime     = MimeType.IsEmpty()     ? FString(TEXT("audio/wav")) : MimeType;
-	AppendAscii(Body, FString::Printf(TEXT("--%s%s"), *Boundary, *CRLF));
-	AppendAscii(Body, FString::Printf(TEXT("Content-Disposition: form-data; name=\"file\"; filename=\"%s\"%s"),
-		*SafeFilename, *CRLF));
-	AppendAscii(Body, FString::Printf(TEXT("Content-Type: %s%s%s"), *SafeMime, *CRLF, *CRLF));
-	Body.Append(AudioBytes);
-	AppendAscii(Body, CRLF);
-
-	// --- closing boundary ---
-	AppendAscii(Body, FString::Printf(TEXT("--%s--%s"), *Boundary, *CRLF));
+	const TArray<uint8> Body = BuildWhisperMultipartBody(
+		Boundary, Model, /*Language=*/TEXT("en"), MimeType, FilenameHint, AudioBytes);
 
 	const TSharedRef<IHttpRequest> Req = FHttpModule::Get().CreateRequest();
 	Req->SetURL(TEXT("https://api.openai.com/v1/audio/transcriptions"));

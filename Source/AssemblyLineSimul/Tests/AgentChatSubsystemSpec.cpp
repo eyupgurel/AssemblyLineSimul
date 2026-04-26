@@ -37,6 +37,29 @@ void FAgentChatSubsystemSpec::Define()
 		});
 	});
 
+	Describe("SpeakResponse", [this]()
+	{
+		It("records the input into LastSpokenForTesting so external systems "
+		   "(e.g. the voice-hail handshake) can be asserted to invoke TTS", [this]()
+		{
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Sub = NewObject<UAgentChatSubsystem>(GI);
+			TestNotNull(TEXT("subsystem instantiated"), Sub);
+			if (!Sub) return;
+
+			TestEqual(TEXT("starts empty"), Sub->LastSpokenForTesting, FString());
+			Sub->SpeakResponse(TEXT("Generator here, reading you loud and clear. Go ahead."));
+			TestEqual(TEXT("recorded the spoken text"),
+				Sub->LastSpokenForTesting,
+				FString(TEXT("Generator here, reading you loud and clear. Go ahead.")));
+
+			Sub->SpeakResponse(TEXT("Filter here, reading you loud and clear. Go ahead."));
+			TestEqual(TEXT("overwritten by the latest call"),
+				Sub->LastSpokenForTesting,
+				FString(TEXT("Filter here, reading you loud and clear. Go ahead.")));
+		});
+	});
+
 	Describe("BuildPromptForStation", [this]()
 	{
 		It("includes the station's role, current rule, JSON-reply contract, and the user message", [this]()

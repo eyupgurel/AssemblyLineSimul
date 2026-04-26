@@ -28,6 +28,16 @@ public:
 	                     const FString& FilenameHint,
 	                     FWhisperComplete OnComplete);
 
+	// Static, side-effect-free builder for the Whisper multipart/form-data body.
+	// Public so tests can assert the body always pins language=en (AC14.7) without
+	// having to round-trip a real HTTP request.
+	static TArray<uint8> BuildWhisperMultipartBody(const FString& Boundary,
+	                                               const FString& InModel,
+	                                               const FString& Language,
+	                                               const FString& MimeType,
+	                                               const FString& FilenameHint,
+	                                               const TArray<uint8>& AudioBytes);
+
 private:
 	FString APIKey;
 	void LoadAPIKey();

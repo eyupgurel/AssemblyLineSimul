@@ -177,6 +177,8 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 
 void UAgentChatSubsystem::SpeakResponse(const FString& Text) const
 {
+	// Record for tests on every call (cheap; doesn't depend on platform).
+	LastSpokenForTesting = Text;
 #if PLATFORM_MAC
 	if (Text.IsEmpty()) return;
 	const FString TempPath = FPaths::ProjectSavedDir() / TEXT("agent_say_buffer.txt");

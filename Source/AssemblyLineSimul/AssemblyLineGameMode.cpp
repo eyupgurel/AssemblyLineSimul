@@ -1,4 +1,5 @@
 #include "AssemblyLineGameMode.h"
+#include "AgentChatSubsystem.h"
 #include "AgentChatWidget.h"
 #include "AssemblyLineDirector.h"
 #include "AssemblyLineFeedback.h"
@@ -386,8 +387,19 @@ void AAssemblyLineGameMode::HandleActiveAgentChanged(EStationType Agent)
 		case EStationType::Sorter:    FriendlyName = TEXT("Sorter");    break;
 		case EStationType::Checker:   FriendlyName = TEXT("Checker");   break;
 		}
-		Active->SpeakStreaming(FString::Printf(
-			TEXT("%s here, reading you loud and clear. Go ahead."), FriendlyName));
+		const FString Affirmation = FString::Printf(
+			TEXT("%s here, reading you loud and clear. Go ahead."), FriendlyName);
+		Active->SpeakStreaming(Affirmation);
+
+		// Also push through the macOS `say` pipeline so the audience HEARS the
+		// handshake — SpeakStreaming alone only updates the talk panel text.
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UAgentChatSubsystem* Chat = GI->GetSubsystem<UAgentChatSubsystem>())
+			{
+				Chat->SpeakResponse(Affirmation);
+			}
+		}
 	}
 }
 

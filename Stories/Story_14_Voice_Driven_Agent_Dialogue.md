@@ -25,6 +25,10 @@ Replace the Tab-toggled chat widget as the primary input channel. Talk to agents
 
 - **AC14.4b — Verbose Checker on REJECT.** The Checker's prompt produces a thorough 2–4 sentence complaint (up to 350 chars) on rejection — naming every offending value, explaining why each one breaks the rule, and calling out which prior station was responsible. PASS responses stay terse (≤100 chars).
 
+- **AC14.7 — English-only transcription.** The Whisper multipart request body always includes a `language=en` field so transcription doesn't auto-detect to the speaker's UI locale (Turkish, German, etc.). Testable via the public `UOpenAIAPISubsystem::BuildWhisperMultipartBody` helper.
+
+- **AC14.8 — Audible hail handshake.** The hail affirmation is BOTH written to the agent's talk panel (`SpeakStreaming`) AND spoken aloud through the macOS `say` pipeline (`UAgentChatSubsystem::SpeakResponse`, now public). `SpeakResponse` records its last input into `LastSpokenForTesting` so a spec can assert the audible path was invoked.
+
 - **AC14.5 — Key handling.** OpenAI key loaded by a new `UOpenAIAPISubsystem` from `Saved/OpenAIAPIKey.txt` first, then `Build/Secrets/OpenAIAPIKey.txt` — same dual-path pattern as `UClaudeAPISubsystem`. Build/ stays gitignored; Build/Secrets/ stages into packaged builds via the existing `+DirectoriesToAlwaysStageAsNonUFS` rule.
 
 - **AC14.6 — Tests.** Specs cover:
