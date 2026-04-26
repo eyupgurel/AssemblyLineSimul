@@ -63,8 +63,15 @@ ABucket::ABucket()
 	{
 		MeshComponent->SetStaticMesh(CubeFinder.Object);
 	}
-	MeshComponent->SetVisibility(false);  // hidden — wireframe edges replace it
-	// Root scale stays at (1,1,1) so crate edges and balls render in raw cm units.
+	// Engine cube is 100cm; scale to the crate's inner extents (× 2 because half-extents).
+	MeshComponent->SetRelativeScale3D(FVector(
+		CrateHalfX * 2.f / 100.f,
+		CrateHalfY * 2.f / 100.f,
+		CrateHalfZ * 2.f / 100.f));
+	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Hidden by default — the wireframe edges represent the bucket. OnConstruction shows
+	// the cube and applies the glass material when GlassMaterial is set.
+	MeshComponent->SetVisibility(false);
 
 	// Hide the entire actor at spawn — RefreshContents un-hides it when Contents is non-empty.
 	SetActorHiddenInGame(true);
@@ -120,14 +127,44 @@ ABucket::ABucket()
 void ABucket::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
-	// Apply cyan tint to crate edges via dynamic material instances.
+
+	// Force the cube to crate dims here (not just in the constructor) so an existing
+	// Blueprint subclass with a serialised scale can't shrink the glass walls.
+	MeshComponent->SetRelativeScale3D(FVector(
+		CrateHalfX * 2.f / 100.f,
+		CrateHalfY * 2.f / 100.f,
+		CrateHalfZ * 2.f / 100.f));
+
+	UMaterialInterface* Glass = GlassMaterial.LoadSynchronous();
+	const bool bUseGlass = Glass != nullptr;
+
+	if (bUseGlass)
+	{
+		MeshComponent->SetVisibility(true);
+		if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Glass, this))
+		{
+			MID->SetVectorParameterValue(TEXT("BodyTint"), GlassTint);
+			MeshComponent->SetMaterial(0, MID);
+		}
+	}
+	else
+	{
+		MeshComponent->SetVisibility(false);
+	}
+
+	// Hide the cyan wireframe when the glass walls are shown — keep both only if no
+	// glass material is provided (fallback to wireframe-only crate).
 	const FLinearColor EdgeColor(0.4f, 0.95f, 1.0f, 1.f);
 	for (UStaticMeshComponent* Edge : CrateEdges)
 	{
 		if (!Edge) continue;
-		if (UMaterialInstanceDynamic* MID = Edge->CreateAndSetMaterialInstanceDynamic(0))
+		Edge->SetVisibility(!bUseGlass);
+		if (!bUseGlass)
 		{
-			MID->SetVectorParameterValue(TEXT("BodyTint"), EdgeColor);
+			if (UMaterialInstanceDynamic* MID = Edge->CreateAndSetMaterialInstanceDynamic(0))
+			{
+				MID->SetVectorParameterValue(TEXT("BodyTint"), EdgeColor);
+			}
 		}
 	}
 }

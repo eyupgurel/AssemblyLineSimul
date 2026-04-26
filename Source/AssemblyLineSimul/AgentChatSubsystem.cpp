@@ -8,6 +8,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "HAL/PlatformProcess.h"
+#include "JsonHelpers.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
@@ -15,29 +16,7 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogAgentChat, Log, All);
 
-namespace
-{
-	bool ExtractJsonObject(const FString& Response, FString& OutJson)
-	{
-		const int32 Start = Response.Find(TEXT("{"));
-		if (Start == INDEX_NONE) return false;
-		int32 Depth = 0;
-		for (int32 i = Start; i < Response.Len(); ++i)
-		{
-			const TCHAR C = Response[i];
-			if (C == TEXT('{')) ++Depth;
-			else if (C == TEXT('}'))
-			{
-				if (--Depth == 0)
-				{
-					OutJson = Response.Mid(Start, i - Start + 1);
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-}
+using AssemblyLineJson::ExtractJsonObject;
 
 void UAgentChatSubsystem::SendMessage(EStationType StationType, const FString& UserText)
 {

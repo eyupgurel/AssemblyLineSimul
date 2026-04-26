@@ -7,11 +7,14 @@
 #include "Dom/JsonObject.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "JsonHelpers.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogStation, Log, All);
+
+using AssemblyLineJson::ExtractJsonObject;
 
 namespace
 {
@@ -25,29 +28,6 @@ namespace
 			if (N % i == 0) return false;
 		}
 		return true;
-	}
-
-	// Extracts the smallest balanced {...} substring from a possibly chatty LLM response.
-	// Claude sometimes wraps JSON in prose or ```json fences even when asked not to.
-	bool ExtractJsonObject(const FString& Response, FString& OutJson)
-	{
-		const int32 Start = Response.Find(TEXT("{"));
-		if (Start == INDEX_NONE) return false;
-		int32 Depth = 0;
-		for (int32 i = Start; i < Response.Len(); ++i)
-		{
-			const TCHAR C = Response[i];
-			if (C == TEXT('{')) ++Depth;
-			else if (C == TEXT('}'))
-			{
-				if (--Depth == 0)
-				{
-					OutJson = Response.Mid(Start, i - Start + 1);
-					return true;
-				}
-			}
-		}
-		return false;
 	}
 
 	bool ParseResultArray(const FString& Response, TArray<int32>& OutNumbers)

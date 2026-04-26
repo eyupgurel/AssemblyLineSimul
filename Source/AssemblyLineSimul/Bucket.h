@@ -48,6 +48,17 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Bucket")
 	FRotator BallRelativeRotation = FRotator(-90.f, 0.f, 0.f);
 
+	// Translucent material for the glass walls. When set, the cube is shown at crate
+	// dimensions and the cyan wireframe edges are hidden — clean glass aquarium look.
+	// When unset (default), keeps the original wireframe-only crate.
+	UPROPERTY(EditAnywhere, Category = "Bucket")
+	TSoftObjectPtr<UMaterialInterface> GlassMaterial;
+
+	// Tint applied to the glass via the dynamic material instance's "BodyTint" parameter.
+	// Stays subtle so the balls inside remain the focus.
+	UPROPERTY(EditAnywhere, Category = "Bucket")
+	FLinearColor GlassTint = FLinearColor(0.6f, 0.85f, 1.0f, 1.f);
+
 	// Fires when RefreshContents transitions Contents from empty to non-empty — the
 	// cinematic uses this to defer zoom-in for the Generator until balls actually appear.
 	FOnBucketContentsRevealed OnContentsRevealed;
