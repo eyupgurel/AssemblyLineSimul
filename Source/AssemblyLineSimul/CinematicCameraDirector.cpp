@@ -16,7 +16,8 @@
 
 ACinematicCameraDirector::ACinematicCameraDirector()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickInterval = 0.f;  // every frame for smooth chase follow
 }
 
 void ACinematicCameraDirector::Start()
@@ -74,7 +75,7 @@ void ACinematicCameraDirector::BindToAssemblyLine(UAssemblyLineDirector* Directo
 	// Sorter->Checker handoff inconsistent with the other stations. Treat Checker like any
 	// other station — closeup only when its worker enters Working.
 	CycleCompletedHandle = Director->OnCycleCompleted.AddUObject(this, &ACinematicCameraDirector::HandleCycleResumed);
-	CycleRejectedHandle  = Director->OnCycleRejected .AddUObject(this, &ACinematicCameraDirector::HandleCycleResumed);
+	CycleRejectedHandle  = Director->OnCycleRejected .AddUObject(this, &ACinematicCameraDirector::HandleCycleRejected);
 	StationActiveHandle  = Director->OnStationActive .AddUObject(this, &ACinematicCameraDirector::HandleStationActive);
 	StationIdleHandle    = Director->OnStationIdle   .AddUObject(this, &ACinematicCameraDirector::HandleStationIdle);
 }
@@ -141,20 +142,94 @@ void ACinematicCameraDirector::HandleCheckerStarted()
 	JumpToShot(CheckerShotIndex);
 }
 
-void ACinematicCameraDirector::HandleCycleResumed(ABucket* /*Bucket*/)
+ABucket* ACinematicCameraDirector::GetChaseTarget() const
 {
-	// When LingerSecondsAfterIdle is set, the linger timer scheduled by OnStationIdle (which
-	// fires when the bucket is Placed, before this) is still counting; let it keep the closeup
-	// alive so the accept/reject FX play out on the same shot. Snap to wide only when linger
-	// is disabled (preserves test determinism).
-	if (LingerSecondsAfterIdle <= 0.f)
+	return ChaseTarget.Get();
+}
+
+void ACinematicCameraDirector::HandleCycleRejected(ABucket* Bucket)
+{
+	// Story 16 AC16.1 — chase the rejected bucket back to its rework station.
+	EnterChase(Bucket);
+}
+
+void ACinematicCameraDirector::EnterChase(ABucket* Bucket)
+{
+	// Null-bucket fallback: no target to chase, snap to the wide/resume shot.
+	// State changes happen BEFORE any PlayerController-dependent calls so headless
+	// specs (no PC in test worlds) can still observe the state transitions.
+	if (!Bucket)
 	{
+		bChasingBucket = false;
+		ChaseTarget.Reset();
 		JumpToShot(ResumeShotIndex);
+		return;
 	}
+
+	bChasingBucket = true;
+	ChaseTarget = Bucket;
+
+	UWorld* W = GetWorld();
+	if (!W) return;
+
+	// Cancel any pending shot auto-advance so it can't yank the view target
+	// off the chase camera in the middle of the chase.
+	W->GetTimerManager().ClearTimer(ShotTimer);
+	W->GetTimerManager().ClearTimer(IdleLingerTimer);
+
+	// Spawn the chase camera lazily — survives across multiple chase cycles.
+	if (!ChaseCamera)
+	{
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		Params.Owner = this;
+		ChaseCamera = W->SpawnActor<ACameraActor>(
+			ACameraActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+		if (ChaseCamera && ChaseCamera->GetCameraComponent())
+		{
+			ChaseCamera->GetCameraComponent()->SetFieldOfView(55.f);
+		}
+	}
+	if (!ChaseCamera) return;
+
+	// Place the chase camera at the right offset BEFORE the blend so the first
+	// frame already shows the bucket — otherwise Tick races the blend and the
+	// audience sees the camera linger at world origin.
+	const FVector BucketLoc = Bucket->GetActorLocation();
+	const FVector CamLoc = BucketLoc + FVector(-180.f, 320.f, 220.f);
+	const FRotator LookAt = (BucketLoc - CamLoc).Rotation();
+	ChaseCamera->SetActorLocationAndRotation(CamLoc, LookAt);
+
+	UE_LOG(LogTemp, Display,
+		TEXT("[Chase] enter — bucket at %s, camera placed at %s"),
+		*BucketLoc.ToString(), *CamLoc.ToString());
+
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(W, 0))
+	{
+		PC->SetViewTargetWithBlend(ChaseCamera, /*BlendTime=*/0.6f);
+	}
+}
+
+void ACinematicCameraDirector::HandleCycleResumed(ABucket* Bucket)
+{
+	// PASS path: chase the accepted bucket too — gives the audience a clean
+	// "victory beat" close-up before it vanishes and the next cycle begins.
+	// (REJECT path goes through HandleCycleRejected which also calls EnterChase.)
+	// Null-bucket falls back to the wide/resume shot inside EnterChase.
+	EnterChase(Bucket);
 }
 
 void ACinematicCameraDirector::HandleStationActive(EStationType StationType)
 {
+	// Story 16 AC16.2 — if we were chasing a rejected bucket, the rework worker
+	// has now reached its station and entered Working. End the chase before the
+	// closeup-jump below transfers the view target.
+	if (bChasingBucket)
+	{
+		bChasingBucket = false;
+		ChaseTarget.Reset();
+	}
+
 	const int32* Idx = StationCloseupShotIndex.Find(StationType);
 	if (!Idx) return;
 
@@ -242,6 +317,47 @@ void ACinematicCameraDirector::SetupSkipBinding()
 		EIC->BindAction(SkipAction, ETriggerEvent::Triggered,
 			this, &ACinematicCameraDirector::HandleSkipPressed);
 	}
+}
+
+void ACinematicCameraDirector::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	// Story 16 — slide the chase camera along behind / above the chased bucket
+	// (rejected: follows the rework worker; accepted: holds the victory beat
+	// until the bucket is destroyed by the cycle-end timer).
+	if (!bChasingBucket || !ChaseCamera) return;
+	ABucket* B = ChaseTarget.Get();
+	if (!B)
+	{
+		// Bucket vanished (PASS-path destroy, recycle, or actor cleanup) — exit
+		// chase and let the next OnStationActive (typically Generator starting
+		// the next cycle) take over.
+		bChasingBucket = false;
+		ChaseTarget.Reset();
+		JumpToShot(ResumeShotIndex);
+		return;
+	}
+
+	// While chasing, also keep slamming the view target back to the chase camera —
+	// belt-and-suspenders against any stray cinematic shot timer that might fire and
+	// snap the view away. Cheap because SetViewTargetWithBlend is a no-op when
+	// the new target equals the current target.
+	if (UWorld* W = GetWorld())
+	{
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(W, 0))
+		{
+			if (PC->GetViewTarget() != ChaseCamera)
+			{
+				PC->SetViewTargetWithBlend(ChaseCamera, /*BlendTime=*/0.f);
+			}
+		}
+	}
+
+	const FVector BucketLoc = B->GetActorLocation();
+	const FVector CamLoc = BucketLoc + FVector(-180.f, 320.f, 220.f);
+	const FRotator LookAt = (BucketLoc - CamLoc).Rotation();
+	ChaseCamera->SetActorLocationAndRotation(CamLoc, LookAt);
 }
 
 void ACinematicCameraDirector::EndPlay(const EEndPlayReason::Type EndPlayReason)

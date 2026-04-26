@@ -4,6 +4,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "AssemblyLineDirector.h"
+#include "Bucket.h"
 #include "CinematicCameraDirector.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -171,11 +172,83 @@ void FCinematicCameraDirectorSpec::Define()
 				CinDirector->GetCurrentShotIndex(), CinDirector->ResumeShotIndex);
 		});
 
-		It("returns to ResumeShotIndex when AssemblyLineDirector broadcasts OnCycleCompleted", [this]()
+		It("enters chase mode targeting the rejected bucket on OnCycleRejected "
+		   "(Story 16 AC16.1)", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinematicSpec_ChaseEnter"));
+			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!AsmDirector) return;
+
+			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
+			CinDirector->BindToAssemblyLine(AsmDirector);
+
+			TestFalse(TEXT("chase off at construction"), CinDirector->IsChasingBucket());
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
+				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+
+			AsmDirector->OnCycleRejected.Broadcast(Bucket);
+
+			TestTrue(TEXT("chase active after OnCycleRejected"), CinDirector->IsChasingBucket());
+			TestEqual(TEXT("chase target is the rejected bucket"),
+				CinDirector->GetChaseTarget(), Bucket);
+		});
+
+		It("exits chase mode when the rework station's worker enters Working "
+		   "(Story 16 AC16.2)", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinematicSpec_ChaseExit"));
+			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!AsmDirector) return;
+
+			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
+			CinDirector->StationCloseupShotIndex.Add(EStationType::Filter, 1);
+			CinDirector->BindToAssemblyLine(AsmDirector);
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
+				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+
+			AsmDirector->OnCycleRejected.Broadcast(Bucket);
+			TestTrue(TEXT("chase active before rework"), CinDirector->IsChasingBucket());
+
+			AsmDirector->OnStationActive.Broadcast(EStationType::Filter);
+
+			TestFalse(TEXT("chase ends when rework station enters Working"),
+				CinDirector->IsChasingBucket());
+		});
+
+		It("updates the chase target when a SECOND rejection arrives "
+		   "(Story 16 AC16.3)", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinematicSpec_ChaseSecond"));
+			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!AsmDirector) return;
+
+			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
+			CinDirector->BindToAssemblyLine(AsmDirector);
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ABucket* B1 = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			ABucket* B2 = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector(500.f, 0.f, 0.f), FRotator::ZeroRotator, Params);
+
+			AsmDirector->OnCycleRejected.Broadcast(B1);
+			TestEqual(TEXT("first chase target"), CinDirector->GetChaseTarget(), B1);
+
+			AsmDirector->OnCycleRejected.Broadcast(B2);
+			TestEqual(TEXT("second chase target replaces first"),
+				CinDirector->GetChaseTarget(), B2);
+		});
+
+		It("falls back to ResumeShotIndex when OnCycleCompleted has no bucket "
+		   "(degenerate case — usually it has the accepted bucket and chases it)", [this]()
 		{
 			FScopedTestWorld TW(TEXT("CinematicSpec_Resume"));
 			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
-			TestNotNull(TEXT("AssemblyLineDirector subsystem available"), AsmDirector);
 			if (!AsmDirector) return;
 
 			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 3, /*bLoop=*/true);
@@ -186,8 +259,33 @@ void FCinematicCameraDirectorSpec::Define()
 			AsmDirector->OnCheckerStarted.Broadcast();
 			AsmDirector->OnCycleCompleted.Broadcast(nullptr);
 
-			TestEqual(TEXT("returned to ResumeShotIndex"),
+			TestEqual(TEXT("null-bucket falls back to ResumeShotIndex"),
 				CinDirector->GetCurrentShotIndex(), CinDirector->ResumeShotIndex);
+			TestFalse(TEXT("no chase entered for null bucket"),
+				CinDirector->IsChasingBucket());
+		});
+
+		It("enters chase mode targeting the ACCEPTED bucket on OnCycleCompleted "
+		   "with a real bucket — victory-beat close-up before the bucket vanishes", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinematicSpec_ChaseOnPass"));
+			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!AsmDirector) return;
+
+			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
+			CinDirector->BindToAssemblyLine(AsmDirector);
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
+				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+
+			AsmDirector->OnCycleCompleted.Broadcast(Bucket);
+
+			TestTrue(TEXT("chase active after OnCycleCompleted with valid bucket"),
+				CinDirector->IsChasingBucket());
+			TestEqual(TEXT("chase target is the accepted bucket"),
+				CinDirector->GetChaseTarget(), Bucket);
 		});
 	});
 }

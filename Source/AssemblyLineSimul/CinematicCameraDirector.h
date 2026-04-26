@@ -70,13 +70,29 @@ public:
 	// Subscribe to AssemblyLineDirector's checker / cycle events. Idempotent.
 	void BindToAssemblyLine(UAssemblyLineDirector* Director);
 
+	// Story 16 — chase mode. When the Checker rejects, the camera follows the
+	// rejected bucket back through the pipeline until the rework station's worker
+	// enters Working (whereupon HandleStationActive jumps to that station's
+	// closeup, ending the chase).
+	bool IsChasingBucket() const { return bChasingBucket; }
+	ABucket* GetChaseTarget() const;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaSeconds) override;
 
 private:
 	int32 CurrentShotIndex = 0;
 	FTimerHandle ShotTimer;
 	FTimerHandle IdleLingerTimer;
+
+	bool bChasingBucket = false;
+	UPROPERTY()
+	TWeakObjectPtr<ABucket> ChaseTarget;
+
+	// Dedicated camera that follows ChaseTarget. Spawned lazily on first chase.
+	UPROPERTY()
+	TObjectPtr<ACameraActor> ChaseCamera;
 
 	UPROPERTY()
 	TArray<TObjectPtr<ACameraActor>> ShotCameras;
@@ -101,6 +117,8 @@ private:
 	void EnsureShotCameras();
 	void HandleCheckerStarted();
 	void HandleCycleResumed(ABucket* Bucket);
+	void HandleCycleRejected(ABucket* Bucket);
+	void EnterChase(ABucket* Bucket);
 	void HandleStationActive(EStationType StationType);
 	void HandleStationIdle(EStationType StationType);
 	void HandleSkipPressed();
