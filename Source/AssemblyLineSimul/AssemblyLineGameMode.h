@@ -11,6 +11,7 @@ class UAgentChatWidget;
 class UInputAction;
 class UInputMappingContext;
 class ABucket;
+class UMacAudioCapture;
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API AAssemblyLineGameMode : public AGameModeBase
@@ -63,7 +64,13 @@ public:
 	// Spawns the chat widget, hides it, and binds Tab to toggle visibility / focus.
 	void SpawnChatWidget();
 
+	// Binds Space (hold) to push-to-talk: capture audio while held, transcribe via
+	// Whisper on release, route the result through UVoiceSubsystem.
+	void SetupVoiceInput();
+
 	UFUNCTION() void ToggleChatWidget();
+	UFUNCTION() void OnVoiceTalkStarted();
+	UFUNCTION() void OnVoiceTalkCompleted();
 
 protected:
 	virtual void BeginPlay() override;
@@ -72,4 +79,11 @@ private:
 	UPROPERTY() TObjectPtr<UAgentChatWidget>       ChatWidget;
 	UPROPERTY() TObjectPtr<UInputAction>           ChatToggleAction;
 	UPROPERTY() TObjectPtr<UInputMappingContext>   ChatToggleMappingContext;
+	UPROPERTY() TObjectPtr<UInputAction>           VoiceTalkAction;
+	UPROPERTY() TObjectPtr<UInputMappingContext>   VoiceMappingContext;
+	UPROPERTY() TObjectPtr<UMacAudioCapture>       AudioCapture;
+
+	// Wires UVoiceSubsystem::OnActiveAgentChanged → station glow + affirmation TTS.
+	FDelegateHandle ActiveAgentChangedHandle;
+	void HandleActiveAgentChanged(EStationType Agent);
 };

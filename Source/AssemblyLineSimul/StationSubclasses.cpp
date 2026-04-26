@@ -371,7 +371,12 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 		TEXT("{\"verdict\":\"pass\"|\"reject\",\"reason\":\"...\",\"send_back_to\":\"Filter\"|\"Sorter\"|null}\n")
 		TEXT("On reject: send_back_to is 'Filter' for content errors, 'Sorter' for ordering errors. ")
 		TEXT("On pass: send_back_to MUST be null.\n")
-		TEXT("'reason' is ONE plain-English sentence (no JSON-speak) under 140 characters."),
+		TEXT("'reason':\n")
+		TEXT(" - On PASS: ONE short plain-English sentence under 100 characters confirming everything checks out.\n")
+		TEXT(" - On REJECT: a thorough complaint, 2-4 sentences (up to 350 characters). ")
+		TEXT("Name EVERY offending value (or pair), explain WHY each one breaks the rule, ")
+		TEXT("and call out which prior station was responsible. Be specific and a little ")
+		TEXT("indignant — the audience needs to understand exactly what went wrong."),
 		*GetEffectiveRule(), *Numbers);
 
 	SpeakStreaming(FString::Printf(TEXT("Inspecting bucket: %s"), *Numbers));

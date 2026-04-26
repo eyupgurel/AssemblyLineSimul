@@ -6,6 +6,7 @@
 #include "Station.generated.h"
 
 class ABucket;
+class UPointLightComponent;
 class UStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
@@ -46,6 +47,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Station")
 	TObjectPtr<UTextRenderComponent> NameLabel;
 
+	// Point light that glows when this station is the voice subsystem's active agent.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Station")
+	TObjectPtr<UPointLightComponent> ActiveLight;
+
 	// In-world UMG panel surfacing the agent's current thoughts (e.g. checker's streaming LLM verdict).
 	UPROPERTY(VisibleAnywhere, Category = "Station")
 	TObjectPtr<UWidgetComponent> TalkWidgetComponent;
@@ -78,6 +83,10 @@ public:
 	// Called by the chat subsystem after writing a chat-supplied rule into CurrentRule.
 	// Default no-op; Checker uses this to flip out of derived mode.
 	virtual void OnRuleSetByChat() {}
+
+	// Toggles the ActiveLight (used by VoiceSubsystem hookup).
+	UFUNCTION(BlueprintCallable, Category = "Station")
+	void SetActive(bool bActive);
 
 	// Set the talk-panel text immediately.
 	UFUNCTION(BlueprintCallable, Category = "Station")

@@ -141,8 +141,16 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 		}
 	}
 
+	// Prepend "<AgentName> here. " so the spoken reply identifies who's talking and
+	// confirms the command was understood — same radio-handshake feel as the hail
+	// affirmation. Skip the prefix when Claude already led with the agent name.
+	const FString AgentName = StationTypeName(StationType);
+	const FString PrefixedReply = Reply.StartsWith(AgentName, ESearchCase::IgnoreCase)
+		? Reply
+		: FString::Printf(TEXT("%s here. %s"), *AgentName, *Reply);
+
 	TArray<FAgentChatMessage>& History = Histories.FindOrAdd(StationType);
-	History.Add({ TEXT("assistant"), Reply });
+	History.Add({ TEXT("assistant"), PrefixedReply });
 
 	UWorld* W = GetWorld();
 	if (W)
@@ -153,7 +161,7 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 			{
 				if (Worker->AssignedStation)
 				{
-					Worker->AssignedStation->SpeakStreaming(Reply);
+					Worker->AssignedStation->SpeakStreaming(PrefixedReply);
 				}
 			}
 		}
@@ -161,7 +169,7 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 
 	if (bSpeakResponses)
 	{
-		SpeakResponse(Reply);
+		SpeakResponse(PrefixedReply);
 	}
 
 	OnAgentResponded.Broadcast(StationType);

@@ -2,6 +2,7 @@
 #include "Bucket.h"
 #include "StationTalkWidget.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -62,6 +63,13 @@ AStation::AStation()
 	NameLabel->SetWorldSize(80.f);
 	NameLabel->SetTextRenderColor(FColor::Cyan);
 
+	ActiveLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("ActiveLight"));
+	ActiveLight->SetupAttachment(RootComponent);
+	ActiveLight->SetRelativeLocation(FVector(0.f, 0.f, 200.f));
+	ActiveLight->SetIntensity(0.f);  // off by default; SetActive(true) lights it
+	ActiveLight->SetAttenuationRadius(800.f);
+	ActiveLight->SetLightColor(FLinearColor(0.4f, 1.0f, 1.0f));  // cyan
+
 	TalkWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("TalkWidgetComponent"));
 	TalkWidgetComponent->SetupAttachment(RootComponent);
 	TalkWidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 380.f));
@@ -121,6 +129,14 @@ void AStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete
 	FStationProcessResult Result;
 	Result.bAccepted = true;
 	OnComplete.ExecuteIfBound(Result);
+}
+
+void AStation::SetActive(bool bActive)
+{
+	if (ActiveLight)
+	{
+		ActiveLight->SetIntensity(bActive ? 8000.f : 0.f);
+	}
 }
 
 void AStation::WriteTalkText(const FString& Text)

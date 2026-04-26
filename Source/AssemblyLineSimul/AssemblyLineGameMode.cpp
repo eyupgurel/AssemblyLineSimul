@@ -3,9 +3,12 @@
 #include "AssemblyLineDirector.h"
 #include "AssemblyLineFeedback.h"
 #include "CinematicCameraDirector.h"
+#include "MacAudioCapture.h"
+#include "OpenAIAPISubsystem.h"
 #include "Station.h"
 #include "StationSubclasses.h"
 #include "StationTalkWidget.h"
+#include "VoiceSubsystem.h"
 #include "WorkerRobot.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/LocalPlayer.h"
@@ -226,6 +229,168 @@ void AAssemblyLineGameMode::ToggleChatWidget()
 	}
 }
 
+void AAssemblyLineGameMode::SetupVoiceInput()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+	APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
+	if (!PC) return;
+
+	if (!VoiceTalkAction)
+	{
+		VoiceTalkAction = NewObject<UInputAction>(this, TEXT("VoiceTalkAction"));
+		VoiceTalkAction->ValueType = EInputActionValueType::Boolean;
+	}
+	if (!VoiceMappingContext)
+	{
+		VoiceMappingContext = NewObject<UInputMappingContext>(this, TEXT("VoiceMappingContext"));
+		VoiceMappingContext->MapKey(VoiceTalkAction, EKeys::SpaceBar);
+	}
+	if (ULocalPlayer* LP = PC->GetLocalPlayer())
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsys =
+				LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+		{
+			Subsys->AddMappingContext(VoiceMappingContext, 1);
+		}
+	}
+	EnableInput(PC);
+	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
+	{
+		EIC->BindAction(VoiceTalkAction, ETriggerEvent::Started,
+			this, &AAssemblyLineGameMode::OnVoiceTalkStarted);
+		EIC->BindAction(VoiceTalkAction, ETriggerEvent::Completed,
+			this, &AAssemblyLineGameMode::OnVoiceTalkCompleted);
+	}
+
+	// Subscribe to active-agent changes so we can light up the right station and
+	// have it speak its affirmation when hailed.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UVoiceSubsystem* Voice = GI->GetSubsystem<UVoiceSubsystem>())
+		{
+			ActiveAgentChangedHandle = Voice->OnActiveAgentChanged.AddUObject(
+				this, &AAssemblyLineGameMode::HandleActiveAgentChanged);
+		}
+	}
+}
+
+void AAssemblyLineGameMode::OnVoiceTalkStarted()
+{
+	if (!AudioCapture)
+	{
+		AudioCapture = NewObject<UMacAudioCapture>(this);
+	}
+	if (AudioCapture->IsRecording())
+	{
+		return;  // already recording (auto-repeat key spam)
+	}
+	if (!AudioCapture->BeginRecord())
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red,
+				TEXT("Voice: failed to start recording (mic permission?)"));
+		}
+		return;
+	}
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(/*Key=*/42, 30.f, FColor::Red, TEXT("● REC"));
+	}
+}
+
+void AAssemblyLineGameMode::OnVoiceTalkCompleted()
+{
+	if (!AudioCapture || !AudioCapture->IsRecording()) return;
+
+	TArray<uint8> AudioBytes;
+	FString MimeType, FilenameHint;
+	const bool bRead = AudioCapture->EndRecord(AudioBytes, MimeType, FilenameHint);
+	if (GEngine) GEngine->RemoveOnScreenDebugMessage(42);
+	if (!bRead) return;
+
+	UGameInstance* GI = GetGameInstance();
+	UOpenAIAPISubsystem* OpenAI = GI ? GI->GetSubsystem<UOpenAIAPISubsystem>() : nullptr;
+	if (!OpenAI || !OpenAI->HasAPIKey())
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red,
+				TEXT("Voice: no OpenAI key — drop one in Build/Secrets/OpenAIAPIKey.txt"));
+		}
+		return;
+	}
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(43, 5.f, FColor::Yellow, TEXT("Transcribing…"));
+	}
+	TWeakObjectPtr<AAssemblyLineGameMode> Weak(this);
+	OpenAI->TranscribeAudio(AudioBytes, MimeType, FilenameHint,
+		FWhisperComplete::CreateLambda([Weak](bool bSuccess, const FString& Transcript)
+		{
+			AAssemblyLineGameMode* Self = Weak.Get();
+			if (!Self) return;
+			if (GEngine) GEngine->RemoveOnScreenDebugMessage(43);
+			if (!bSuccess)
+			{
+				if (GEngine)
+				{
+					GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red,
+						FString::Printf(TEXT("Whisper failed: %s"), *Transcript));
+				}
+				return;
+			}
+			if (GEngine)
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Green,
+					FString::Printf(TEXT("\"%s\""), *Transcript));
+			}
+			if (UGameInstance* GI = Self->GetGameInstance())
+			{
+				if (UVoiceSubsystem* Voice = GI->GetSubsystem<UVoiceSubsystem>())
+				{
+					Voice->HandleTranscript(Transcript);
+				}
+			}
+		}));
+}
+
+void AAssemblyLineGameMode::HandleActiveAgentChanged(EStationType Agent)
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
+	if (!Director) return;
+
+	// Turn the glow off on every station, then on for the active one. Speak the
+	// affirmation through that station's existing talk panel + macOS-say pipeline.
+	const TArray<EStationType> All = {
+		EStationType::Generator, EStationType::Filter, EStationType::Sorter, EStationType::Checker
+	};
+	for (EStationType T : All)
+	{
+		if (AStation* S = Director->GetStationOfType(T))
+		{
+			S->SetActive(T == Agent);
+		}
+	}
+	if (AStation* Active = Director->GetStationOfType(Agent))
+	{
+		const TCHAR* FriendlyName = TEXT("Agent");
+		switch (Agent)
+		{
+		case EStationType::Generator: FriendlyName = TEXT("Generator"); break;
+		case EStationType::Filter:    FriendlyName = TEXT("Filter");    break;
+		case EStationType::Sorter:    FriendlyName = TEXT("Sorter");    break;
+		case EStationType::Checker:   FriendlyName = TEXT("Checker");   break;
+		}
+		Active->SpeakStreaming(FString::Printf(
+			TEXT("%s here, reading you loud and clear. Go ahead."), FriendlyName));
+	}
+}
+
 void AAssemblyLineGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -243,6 +408,7 @@ void AAssemblyLineGameMode::BeginPlay()
 	SpawnCinematicDirector();
 	SpawnFeedback();
 	SpawnChatWidget();
+	SetupVoiceInput();
 
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return;

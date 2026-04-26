@@ -23,6 +23,12 @@ public class AssemblyLineSimul : ModuleRules
 
 		PrivateIncludePaths.Add(ModuleDirectory);
 
+		// Voice capture on macOS uses AVAudioRecorder (Obj-C++ in MacAudioCapture.mm).
+		if (Target.Platform == UnrealTargetPlatform.Mac)
+		{
+			PublicFrameworks.AddRange(new string[] { "AVFoundation", "Foundation", "CoreAudio" });
+		}
+
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
