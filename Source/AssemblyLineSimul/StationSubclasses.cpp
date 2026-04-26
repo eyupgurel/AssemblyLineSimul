@@ -1,10 +1,12 @@
 #include "StationSubclasses.h"
+#include "AssemblyLineDirector.h"
 #include "Bucket.h"
 #include "ClaudeAPISubsystem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Dom/JsonObject.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "TimerManager.h"
@@ -317,8 +319,54 @@ ACheckerStation::ACheckerStation()
 {
 	StationType = EStationType::Checker;
 	DisplayName = TEXT("CHECKER (LLM)");
-	CurrentRule = TEXT("The bucket should contain only prime numbers in [1, 100], sorted strictly ascending. If correct, accept. If not, identify which prior station likely made the mistake (Filter for content errors; Sorter for ordering errors).");
+	// Default CurrentRule is only used if the user later switches Checker out of derived
+	// mode by giving it an explicit rule via chat. While bUseDerivedRule is true,
+	// GetEffectiveRule composes Generator + Filter + Sorter rules at read time.
+	CurrentRule = TEXT("The bucket should contain only prime numbers in [1, 100], sorted strictly ascending.");
 	if (NameLabel) NameLabel->SetTextRenderColor(FColor::Magenta);
+}
+
+FString ACheckerStation::GetEffectiveRule() const
+{
+	if (!bUseDerivedRule)
+	{
+		return CurrentRule;
+	}
+
+	UWorld* W = GetWorld();
+	UAssemblyLineDirector* Director = W ? W->GetSubsystem<UAssemblyLineDirector>() : nullptr;
+	if (!Director)
+	{
+		return CurrentRule;
+	}
+
+	auto RuleOf = [Director](EStationType T)
+	{
+		AStation* S = Director->GetStationOfType(T);
+		return S ? S->CurrentRule : FString(TEXT("(unknown)"));
+	};
+
+	return FString::Printf(
+		TEXT("The bucket has been processed by three upstream agents in this order:\n")
+		TEXT("  1. Generator produced items per: %s\n")
+		TEXT("  2. Filter then applied: %s\n")
+		TEXT("  3. Sorter then applied: %s\n")
+		TEXT("Verify the final bucket is consistent with the chain of rules. ")
+		TEXT("On reject: send back to 'Filter' if the wrong items are present, ")
+		TEXT("or 'Sorter' if items are in the wrong order."),
+		*RuleOf(EStationType::Generator),
+		*RuleOf(EStationType::Filter),
+		*RuleOf(EStationType::Sorter));
+}
+
+void ACheckerStation::OnRuleSetByChat()
+{
+	if (bUseDerivedRule)
+	{
+		bUseDerivedRule = false;
+		UE_LOG(LogStation, Log,
+			TEXT("Checker switched to explicit chat-driven rule (derived mode off)."));
+	}
 }
 
 void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
@@ -344,7 +392,7 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 		TEXT("On reject: send_back_to is 'Filter' for content errors, 'Sorter' for ordering errors. ")
 		TEXT("On pass: send_back_to MUST be null.\n")
 		TEXT("'reason' is ONE plain-English sentence (no JSON-speak) under 140 characters."),
-		*CurrentRule, *Numbers);
+		*GetEffectiveRule(), *Numbers);
 
 	SpeakStreaming(FString::Printf(TEXT("Inspecting bucket: %s"), *Numbers));
 

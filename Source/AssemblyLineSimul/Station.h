@@ -71,6 +71,14 @@ public:
 
 	virtual void ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete);
 
+	// Returns the rule the station should actually use right now. Defaults to CurrentRule;
+	// Checker overrides to compose Generator/Filter/Sorter rules when in derived mode.
+	virtual FString GetEffectiveRule() const { return CurrentRule; }
+
+	// Called by the chat subsystem after writing a chat-supplied rule into CurrentRule.
+	// Default no-op; Checker uses this to flip out of derived mode.
+	virtual void OnRuleSetByChat() {}
+
 	// Set the talk-panel text immediately.
 	UFUNCTION(BlueprintCallable, Category = "Station")
 	void Speak(const FString& Text);

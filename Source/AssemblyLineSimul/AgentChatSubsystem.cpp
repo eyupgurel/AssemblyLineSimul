@@ -154,6 +154,7 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 				if (AStation* Station = Director->GetStationOfType(StationType))
 				{
 					Station->CurrentRule = NewRule;
+					Station->OnRuleSetByChat();
 					UE_LOG(LogAgentChat, Log, TEXT("[%s] CurrentRule updated -> %s"),
 						*StationTypeName(StationType), *NewRule);
 				}
@@ -228,7 +229,7 @@ FString UAgentChatSubsystem::GetCurrentRule(EStationType StationType) const
 	if (!Director) return TEXT("(unknown — no director)");
 	AStation* Station = Director->GetStationOfType(StationType);
 	if (!Station) return TEXT("(unknown — station not registered)");
-	return Station->CurrentRule;
+	return Station->GetEffectiveRule();
 }
 
 FString UAgentChatSubsystem::GetCurrentBucketContents(EStationType StationType) const

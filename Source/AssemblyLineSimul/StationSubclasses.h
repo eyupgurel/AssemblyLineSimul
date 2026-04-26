@@ -48,4 +48,14 @@ class ASSEMBLYLINESIMUL_API ACheckerStation : public AStation
 public:
 	ACheckerStation();
 	virtual void ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete) override;
+
+	// When true, GetEffectiveRule composes Generator + Filter + Sorter rules at read time
+	// so chat-driven changes upstream automatically reach the Checker. Flipped to false
+	// the first time the user gives the Checker its own rule via chat; toggle in the editor
+	// to revert.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Checker")
+	bool bUseDerivedRule = true;
+
+	virtual FString GetEffectiveRule() const override;
+	virtual void OnRuleSetByChat() override;
 };
