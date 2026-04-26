@@ -209,35 +209,35 @@ sequenceDiagram
   participant St as Active AStation
 
   U->>GM: hold Space
-  GM->>Cap: BeginRecord (M4A AAC)
-  Note over Cap: AVAudioRecorder writes to Saved/VoiceCapture/<guid>.m4a
+  GM->>Cap: BeginRecord M4A AAC
+  Note over Cap: AVAudioRecorder writes to Saved VoiceCapture guid m4a
   U->>GM: release Space
-  GM->>Cap: EndRecord → bytes + mime
-  GM->>AI: TranscribeAudio (multipart, language=en)
-  AI->>AI: HTTP POST /v1/audio/transcriptions
+  GM->>Cap: EndRecord returns bytes and mime
+  GM->>AI: TranscribeAudio multipart, language=en
+  AI->>AI: HTTP POST v1/audio/transcriptions
   AI-->>GM: transcript
-  GM->>V: HandleTranscript(transcript)
+  GM->>V: HandleTranscript
 
-  alt "hey &lt;agent&gt; do you read me"
+  alt hey AGENT do you read me
     V->>Hail: TryParseHail
-    Hail-->>V: matched StationType (fuzzy, ≤2 edits)
+    Hail-->>V: matched StationType, fuzzy match
     V->>V: SetActiveAgent
     V->>GM: OnActiveAgentChanged
-    GM->>St: SetActive(true) — cyan glow
-    GM->>St: SpeakStreaming("&lt;Agent&gt; here, reading you loud and clear. Go ahead.")
-    GM->>Chat: SpeakResponse(same text)
-    Chat->>Say: /usr/bin/say -f &lt;tempfile&gt;
+    GM->>St: SetActive true cyan glow
+    GM->>St: SpeakStreaming Agent here reading you loud and clear
+    GM->>Chat: SpeakResponse same text
+    Chat->>Say: forks usr/bin/say with tempfile
   else any other transcript
-    V->>Chat: SendMessage(activeAgent, transcript)
-    Chat->>CA: SendMessage(prompt with role + rule + history)
-    CA->>CA: HTTP POST /v1/messages
-    CA-->>Chat: reply (JSON: reply + new_rule)
-    Chat->>St: SpeakStreaming(prefixed reply)
-    Chat->>Say: SpeakResponse(prefixed reply)
+    V->>Chat: SendMessage activeAgent transcript
+    Chat->>CA: SendMessage with role rule history
+    CA->>CA: HTTP POST v1/messages
+    CA-->>Chat: reply JSON contains reply and new_rule
+    Chat->>St: SpeakStreaming prefixed reply
+    Chat->>Say: SpeakResponse prefixed reply
     opt new_rule present
-      Chat->>St: CurrentRule = new_rule, OnRuleSetByChat()
-      Chat->>Chat: OnRuleUpdated.Broadcast
-      Chat->>Say: SpeakResponse("Rule updated. From now on I will …")
+      Chat->>St: CurrentRule equals new_rule, OnRuleSetByChat
+      Chat->>Chat: OnRuleUpdated Broadcast
+      Chat->>Say: SpeakResponse Rule updated message
     end
   end
 ```
@@ -252,19 +252,19 @@ sequenceDiagram
   participant St as AStation (e.g. Filter)
   participant Ck as ACheckerStation
 
-  U->>Chat: SendMessage(Filter, "only filter even numbers")
-  Chat->>CA: HTTP POST /v1/messages (role + Filter.GetEffectiveRule + bucket + history)
-  CA-->>Chat: {"reply":"...","new_rule":"Keep only the even numbers"}
+  U->>Chat: SendMessage Filter only filter even numbers
+  Chat->>CA: HTTP POST v1/messages with role rule bucket history
+  CA-->>Chat: reply JSON has reply field and new_rule field
 
-  Chat->>St: CurrentRule = "Keep only the even numbers"
-  Chat->>St: OnRuleSetByChat()
-  Note right of Ck: Checker.bUseDerivedRule defaults true; GetEffectiveRule recomposes from Generator+Filter+Sorter at read time so Checker auto-sees the new Filter rule.
-  Chat->>Chat: OnRuleUpdated.Broadcast(Filter, NewRule)
-  Chat->>Chat: UE_LOG(Display) "[Filter] CurrentRule updated → ..."
-  Chat->>St: SpeakAloud("Filter here. <reply>")
-  Chat->>St: SpeakAloud("Rule updated. From now on I will <new rule>.")
+  Chat->>St: CurrentRule equals Keep only the even numbers
+  Chat->>St: OnRuleSetByChat
+  Note right of Ck: Checker bUseDerivedRule defaults true so GetEffectiveRule recomposes upstream rules at read time and Checker auto-sees the new Filter rule
+  Chat->>Chat: OnRuleUpdated Broadcast Filter NewRule
+  Chat->>Chat: UE_LOG Display Filter CurrentRule updated
+  Chat->>St: SpeakAloud Filter here plus reply
+  Chat->>St: SpeakAloud Rule updated message
 
-  Note over St: Next bucket through Filter — ProcessBucket builds prompt with the new EffectiveRule and logs "[Filter] ProcessBucket using rule: ..."
+  Note over St: Next bucket through Filter ProcessBucket builds prompt with the new EffectiveRule and logs ProcessBucket using rule
 ```
 
 ### Cinematic camera state machine
