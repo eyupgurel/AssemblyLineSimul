@@ -235,6 +235,49 @@ void FWorkerRobotSpec::Define()
 		});
 	});
 
+	Describe("Visual scale (Story 18 AC18.1)", [this]()
+	{
+		It("spawns at 1.5x actor scale so the mannequin reads at human size", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_Scale"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+			TestEqual(TEXT("uniform 1.5x scale"),
+				Worker->GetActorScale3D(), FVector(1.5f, 1.5f, 1.5f));
+		});
+	});
+
+	Describe("Animation by state (Story 18 AC18.2 / AC18.3)", [this]()
+	{
+		It("PickAnimationForState returns IdleAnimation for stationary states "
+		   "(Idle, Working) — PickUp and Place are transient chain-states.", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_AnimIdle"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+			TestNotNull(TEXT("IdleAnimation loaded"), Worker->IdleAnimation.Get());
+
+			for (EWorkerState S : { EWorkerState::Idle, EWorkerState::Working })
+			{
+				TestEqual(*FString::Printf(TEXT("state %d → idle anim"), (int32)S),
+					Worker->PickAnimationForState(S), Worker->IdleAnimation.Get());
+			}
+		});
+
+		It("PickAnimationForState returns WalkAnimation for moving states "
+		   "(MoveToInput, MoveToWorkPos, MoveToOutput, ReturnHome)", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_AnimWalk"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+			TestNotNull(TEXT("WalkAnimation loaded"), Worker->WalkAnimation.Get());
+
+			for (EWorkerState S : { EWorkerState::MoveToInput, EWorkerState::MoveToWorkPos,
+			                        EWorkerState::MoveToOutput, EWorkerState::ReturnHome })
+			{
+				TestEqual(*FString::Printf(TEXT("state %d → walk anim"), (int32)S),
+					Worker->PickAnimationForState(S), Worker->WalkAnimation.Get());
+			}
+		});
+	});
+
 	Describe("BeginTask", [this]()
 	{
 		It("completes the FSM exactly once when the station's ProcessBucket fires synchronously", [this]()

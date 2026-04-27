@@ -20,6 +20,10 @@ AWorkerRobot::AWorkerRobot()
 	CapsuleComponent->InitCapsuleSize(40.f, 90.f);
 	RootComponent = CapsuleComponent;
 
+	// Mannequin reads at human scale against the stations and bucket — capsule,
+	// skeletal mesh, and composite parts all scale uniformly via the actor scale.
+	SetActorScale3D(FVector(1.5f));
+
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
 	BodyMesh->SetupAttachment(RootComponent);
 	BodyMesh->SetRelativeLocation(FVector(0.f, 0.f, -90.f));
@@ -51,16 +55,16 @@ AWorkerRobot::AWorkerRobot()
 	SkeletalBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SkeletalBodyMesh->SetVisibility(false);  // hidden until ApplyBodyMesh receives a mesh
 
-	// Default to the engine's MM_Idle animation so the mannequin breathes instead of
-	// freezing in T-pose. AnimationMode + AnimationAsset are honored when an actual
-	// skeletal mesh is assigned via ApplyBodyMesh.
+	// Cache idle and walk animations from the engine mannequin pack.
+	// EnterState calls RefreshAnimationForState to swap between them.
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> IdleFinder(
 		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle.MM_Idle"));
-	if (IdleFinder.Succeeded())
-	{
-		SkeletalBodyMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-		SkeletalBodyMesh->SetAnimation(IdleFinder.Object);
-	}
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> WalkFinder(
+		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Walk/MF_Unarmed_Walk_Fwd.MF_Unarmed_Walk_Fwd"));
+	if (IdleFinder.Succeeded()) IdleAnimation = IdleFinder.Object;
+	if (WalkFinder.Succeeded()) WalkAnimation = WalkFinder.Object;
+	SkeletalBodyMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	RefreshAnimationForState();
 
 	// Composite robot body — these REPLACE the legacy BodyMesh+HeadMesh visually.
 	auto MakePart = [this](const TCHAR* Name, UStaticMesh* Mesh, FVector Loc, FVector Scale)
@@ -176,6 +180,7 @@ void AWorkerRobot::BeginTask(ABucket* Bucket, USceneComponent* FromSlot, USceneC
 void AWorkerRobot::EnterState(EWorkerState NewState)
 {
 	State = NewState;
+	RefreshAnimationForState();
 	switch (State)
 	{
 	case EWorkerState::MoveToInput:
@@ -231,6 +236,25 @@ void AWorkerRobot::EnterState(EWorkerState NewState)
 		break;
 	}
 	UpdateLabel();
+}
+
+UAnimSequence* AWorkerRobot::PickAnimationForState(EWorkerState QueryState) const
+{
+	const bool bMoving =
+		QueryState == EWorkerState::MoveToInput   ||
+		QueryState == EWorkerState::MoveToWorkPos ||
+		QueryState == EWorkerState::MoveToOutput  ||
+		QueryState == EWorkerState::ReturnHome;
+	return bMoving ? WalkAnimation.Get() : IdleAnimation.Get();
+}
+
+void AWorkerRobot::RefreshAnimationForState()
+{
+	if (!SkeletalBodyMesh) return;
+	if (UAnimSequence* Target = PickAnimationForState(State))
+	{
+		SkeletalBodyMesh->SetAnimation(Target);
+	}
 }
 
 void AWorkerRobot::UpdateLabel()

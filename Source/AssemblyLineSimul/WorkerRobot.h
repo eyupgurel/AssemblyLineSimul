@@ -127,6 +127,25 @@ public:
 	// place the result at ToSlot, then return home.
 	void BeginTask(ABucket* Bucket, USceneComponent* FromSlot, USceneComponent* ToSlot, FWorkerTaskComplete OnComplete);
 
+	// Idle pose played in stationary states (Idle, Working, PickUp, Place).
+	UPROPERTY(VisibleAnywhere, Category = "Robot|Animation")
+	TObjectPtr<class UAnimSequence> IdleAnimation;
+
+	// Walk loop played in moving states (MoveToInput, MoveToWorkPos, MoveToOutput, ReturnHome).
+	UPROPERTY(VisibleAnywhere, Category = "Robot|Animation")
+	TObjectPtr<class UAnimSequence> WalkAnimation;
+
+	// Test seam — production callers go through BeginTask; tests drive specific
+	// state transitions to assert the animation swap contract.
+	void EnterStateForTesting(EWorkerState NewState) { EnterState(NewState); }
+
+	// Pure picker — returns IdleAnimation for stationary states, WalkAnimation
+	// for moving states (MoveToInput / MoveToWorkPos / MoveToOutput / ReturnHome).
+	// Public so tests can assert the contract without requiring a real
+	// USkeletalMesh (GetSingleNodeInstance() returns null when the component
+	// has no mesh, even after SetAnimation is called).
+	UAnimSequence* PickAnimationForState(EWorkerState QueryState) const;
+
 	virtual void Tick(float DeltaSeconds) override;
 
 protected:
@@ -144,4 +163,5 @@ protected:
 	bool MoveToward(const FVector& Target, float DeltaSeconds);
 	void AttachBucket();
 	void DetachBucketAt(USceneComponent* Slot);
+	void RefreshAnimationForState();
 };
