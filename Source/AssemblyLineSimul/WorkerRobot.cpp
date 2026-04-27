@@ -7,6 +7,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Animation/AnimSequence.h"
 #include "Engine/SkeletalMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
@@ -40,8 +41,26 @@ AWorkerRobot::AWorkerRobot()
 
 	SkeletalBodyMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("SkeletalBodyMesh"));
 	SkeletalBodyMesh->SetupAttachment(RootComponent);
+	// Drop the mesh so its feet land at the capsule's bottom (capsule half-height
+	// is 90cm). UE5 mannequin's pivot is at the feet, so without this offset Manny
+	// floats with feet at the capsule center.
+	SkeletalBodyMesh->SetRelativeLocation(FVector(0.f, 0.f, -90.f));
+	// UE5 mannequin's forward axis is -Y; rotate so the visible forward matches
+	// the worker's +X movement direction.
+	SkeletalBodyMesh->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
 	SkeletalBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SkeletalBodyMesh->SetVisibility(false);  // hidden until ApplyBodyMesh receives a mesh
+
+	// Default to the engine's MM_Idle animation so the mannequin breathes instead of
+	// freezing in T-pose. AnimationMode + AnimationAsset are honored when an actual
+	// skeletal mesh is assigned via ApplyBodyMesh.
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> IdleFinder(
+		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle.MM_Idle"));
+	if (IdleFinder.Succeeded())
+	{
+		SkeletalBodyMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+		SkeletalBodyMesh->SetAnimation(IdleFinder.Object);
+	}
 
 	// Composite robot body — these REPLACE the legacy BodyMesh+HeadMesh visually.
 	auto MakePart = [this](const TCHAR* Name, UStaticMesh* Mesh, FVector Loc, FVector Scale)
