@@ -3,6 +3,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Bucket.h"
 #include "Station.h"
 #include "TestStations.h"
@@ -275,6 +276,28 @@ void FWorkerRobotSpec::Define()
 				TestEqual(*FString::Printf(TEXT("state %d → walk anim"), (int32)S),
 					Worker->PickAnimationForState(S), Worker->WalkAnimation.Get());
 			}
+		});
+
+		It("starts playing the chosen animation looped after ApplyBodyMesh assigns "
+		   "a real skeletal mesh — SetAnimation alone leaves the SingleNodeInstance "
+		   "stopped, this asserts Play(true) is invoked too", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_AnimPlays"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+			USkeletalMesh* Manny = LoadObject<USkeletalMesh>(nullptr,
+				TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
+			TestNotNull(TEXT("loaded SKM_Manny_Simple"), Manny);
+			if (!Manny) return;
+
+			Worker->ApplyBodyMesh(Manny);
+
+			UAnimSingleNodeInstance* Inst = Worker->SkeletalBodyMesh->GetSingleNodeInstance();
+			TestNotNull(TEXT("SingleNodeInstance exists after ApplyBodyMesh"), Inst);
+			if (!Inst) return;
+			TestEqual(TEXT("instance has the idle anim asset"),
+				Inst->GetAnimationAsset(), Cast<UAnimationAsset>(Worker->IdleAnimation.Get()));
+			TestTrue(TEXT("instance is playing"), Inst->IsPlaying());
+			TestTrue(TEXT("instance is looping"), Inst->IsLooping());
 		});
 	});
 

@@ -112,6 +112,9 @@ void AWorkerRobot::ApplyBodyMesh(USkeletalMesh* ResolvedMesh)
 	if (!ResolvedMesh || !SkeletalBodyMesh) return;
 	SkeletalBodyMesh->SetSkeletalMeshAsset(ResolvedMesh);
 	SkeletalBodyMesh->SetVisibility(true);
+	// Constructor's RefreshAnimationForState ran before any mesh existed (no
+	// SingleNodeInstance to receive the call); re-apply now that the mesh is in.
+	RefreshAnimationForState();
 
 	const TArray<UStaticMeshComponent*> AllPrimitives = {
 		Torso, HeadDome, Eye, LeftArm, RightArm, Antenna, BodyMesh, HeadMesh
@@ -251,10 +254,13 @@ UAnimSequence* AWorkerRobot::PickAnimationForState(EWorkerState QueryState) cons
 void AWorkerRobot::RefreshAnimationForState()
 {
 	if (!SkeletalBodyMesh) return;
-	if (UAnimSequence* Target = PickAnimationForState(State))
-	{
-		SkeletalBodyMesh->SetAnimation(Target);
-	}
+	UAnimSequence* Target = PickAnimationForState(State);
+	if (!Target) return;
+	// SetAnimation only stores the asset; SingleNodeInstance starts stopped, so
+	// the mesh would freeze on frame 0. Play(true) kicks the looped playback.
+	SkeletalBodyMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	SkeletalBodyMesh->SetAnimation(Target);
+	SkeletalBodyMesh->Play(/*bLooping=*/true);
 }
 
 void AWorkerRobot::UpdateLabel()
