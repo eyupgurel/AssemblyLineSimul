@@ -8,6 +8,7 @@
 #include "Station.h"
 #include "TestStations.h"
 #include "WorkerRobot.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -298,6 +299,37 @@ void FWorkerRobotSpec::Define()
 				Inst->GetAnimationAsset(), Cast<UAnimationAsset>(Worker->IdleAnimation.Get()));
 			TestTrue(TEXT("instance is playing"), Inst->IsPlaying());
 			TestTrue(TEXT("instance is looping"), Inst->IsLooping());
+		});
+	});
+
+	Describe("ActiveLight glow (Story 19)", [this]()
+	{
+		It("constructs with ActiveLight off (Intensity == 0) and a green LightColor", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_ActiveLightDefault"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+
+			TestNotNull(TEXT("ActiveLight component exists"), Worker->ActiveLight.Get());
+			if (!Worker->ActiveLight) return;
+			TestEqual(TEXT("intensity off by default"), Worker->ActiveLight->Intensity, 0.f);
+			const FLinearColor Color = Worker->ActiveLight->GetLightColor();
+			TestTrue(TEXT("light is greenish (G > R and G > B)"),
+				Color.G > Color.R && Color.G > Color.B);
+		});
+
+		It("SetActive(true) lights the worker (Intensity > 0); SetActive(false) turns it off", [this]()
+		{
+			FScopedTestWorld TW(TEXT("WorkerRobotSpec_SetActive"));
+			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
+			if (!Worker || !Worker->ActiveLight) return;
+
+			Worker->SetActive(true);
+			TestTrue(TEXT("intensity > 0 after SetActive(true)"),
+				Worker->ActiveLight->Intensity > 0.f);
+
+			Worker->SetActive(false);
+			TestEqual(TEXT("intensity back to 0 after SetActive(false)"),
+				Worker->ActiveLight->Intensity, 0.f);
 		});
 	});
 

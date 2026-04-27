@@ -3,6 +3,7 @@
 #include "Station.h"
 #include "AssemblyLineTypes.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -105,6 +106,21 @@ AWorkerRobot::AWorkerRobot()
 	StateLabel->SetWorldSize(40.f);
 	StateLabel->SetTextRenderColor(FColor::White);
 	StateLabel->SetText(FText::FromString(TEXT("Idle")));
+
+	// Story 19 — green active-speaker glow on the worker. Off by default;
+	// HandleActiveAgentChanged in the GameMode toggles it via SetActive.
+	ActiveLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("ActiveLight"));
+	ActiveLight->SetupAttachment(RootComponent);
+	ActiveLight->SetRelativeLocation(FVector(0.f, 0.f, 150.f));
+	ActiveLight->SetIntensity(0.f);
+	ActiveLight->SetAttenuationRadius(600.f);
+	ActiveLight->SetLightColor(FLinearColor(0.10f, 1.0f, 0.20f));
+}
+
+void AWorkerRobot::SetActive(bool bActive)
+{
+	if (!ActiveLight) return;
+	ActiveLight->SetIntensity(bActive ? 8000.f : 0.f);
 }
 
 void AWorkerRobot::ApplyBodyMesh(USkeletalMesh* ResolvedMesh)

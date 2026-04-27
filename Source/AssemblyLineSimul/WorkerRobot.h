@@ -8,6 +8,7 @@
 class ABucket;
 class AStation;
 class UCapsuleComponent;
+class UPointLightComponent;
 class USkeletalMeshComponent;
 class USkeletalMesh;
 class UStaticMeshComponent;
@@ -82,6 +83,14 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Robot")
 	TObjectPtr<UTextRenderComponent> StateLabel;
+
+	// Green point light that lights when this worker's agent is the active voice
+	// speaker (Story 19). Off by default; toggled by SetActive.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Robot")
+	TObjectPtr<UPointLightComponent> ActiveLight;
+
+	// Toggle the green active-speaker glow on this worker.
+	void SetActive(bool bActive);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Robot")
 	float MoveSpeed = 350.f;

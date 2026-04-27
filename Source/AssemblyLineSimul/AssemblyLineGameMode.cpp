@@ -365,16 +365,17 @@ void AAssemblyLineGameMode::HandleActiveAgentChanged(EStationType Agent)
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return;
 
-	// Turn the glow off on every station, then on for the active one. Speak the
-	// affirmation through that station's existing talk panel + macOS-say pipeline.
+	// Story 19 — light up the WORKER for the active agent (green glow), not the
+	// station (which used to glow cyan). Speak the affirmation through the
+	// active agent's talk panel + macOS-say pipeline below.
 	const TArray<EStationType> All = {
 		EStationType::Generator, EStationType::Filter, EStationType::Sorter, EStationType::Checker
 	};
 	for (EStationType T : All)
 	{
-		if (AStation* S = Director->GetStationOfType(T))
+		if (AWorkerRobot* Worker = Director->GetRobotForStation(T))
 		{
-			S->SetActive(T == Agent);
+			Worker->SetActive(T == Agent);
 		}
 	}
 	if (AStation* Active = Director->GetStationOfType(Agent))
