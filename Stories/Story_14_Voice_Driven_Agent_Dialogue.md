@@ -29,7 +29,7 @@ Replace the Tab-toggled chat widget as the primary input channel. Talk to agents
 
 - **AC14.8 — Audible hail handshake.** The hail affirmation is BOTH written to the agent's talk panel (`SpeakStreaming`) AND spoken aloud through the macOS `say` pipeline (`UAgentChatSubsystem::SpeakResponse`, now public). `SpeakResponse` records its last input into `LastSpokenForTesting` so a spec can assert the audible path was invoked.
 
-- **AC14.5 — Key handling.** OpenAI key loaded by a new `UOpenAIAPISubsystem` from `Saved/OpenAIAPIKey.txt` first, then `Build/Secrets/OpenAIAPIKey.txt` — same dual-path pattern as `UClaudeAPISubsystem`. Build/ stays gitignored; Build/Secrets/ stages into packaged builds via the existing `+DirectoriesToAlwaysStageAsNonUFS` rule.
+- **AC14.5 — Key handling.** OpenAI key loaded by a new `UOpenAIAPISubsystem` from `Saved/OpenAIAPIKey.txt` first, then `Content/Secrets/OpenAIAPIKey.txt` — same dual-path pattern as `UClaudeAPISubsystem`. The Secrets folder is gitignored and stages into packaged builds via `+DirectoriesToAlwaysStageAsNonUFS=(Path="Secrets")` (UAT resolves the path relative to Content/, so `Build/Secrets/` would never have staged — this fix lives at `Content/Secrets/`).
 
 - **AC14.6 — Tests.** Specs cover:
   - `VoiceHailParser`: matches "hey filter do you read me", "Hey, Filter — do you read me?", rejects "hey people", correctly extracts station type for all four agents.

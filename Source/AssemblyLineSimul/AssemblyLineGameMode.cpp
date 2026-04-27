@@ -318,7 +318,7 @@ void AAssemblyLineGameMode::OnVoiceTalkCompleted()
 		if (GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red,
-				TEXT("Voice: no OpenAI key — drop one in Build/Secrets/OpenAIAPIKey.txt"));
+				TEXT("Voice: no OpenAI key — drop one in Content/Secrets/OpenAIAPIKey.txt"));
 		}
 		return;
 	}

@@ -83,8 +83,8 @@ git clone git@github.com:eyupgurel/AssemblyLineSimul.git
 cd AssemblyLineSimul
 
 # 2. Drop your API keys (gitignored, auto‑staged into packaged builds)
-echo 'sk-ant-...' > Build/Secrets/AnthropicAPIKey.txt
-echo 'sk-...'     > Build/Secrets/OpenAIAPIKey.txt
+echo 'sk-ant-...' > Content/Secrets/AnthropicAPIKey.txt
+echo 'sk-...'     > Content/Secrets/OpenAIAPIKey.txt
 
 # 3. Build
 "/Users/Shared/Epic Games/UE_5.7/Engine/Build/BatchFiles/Mac/Build.sh" \
@@ -395,7 +395,7 @@ AssemblyLineSimul/
 │       └── OpenAIAPIKey.txt
 ├── Config/
 │   ├── DefaultEngine.ini     ← GlobalDefaultGameMode = BP_AssemblyLineGameMode
-│   └── DefaultGame.ini       ← +DirectoriesToAlwaysStageAsNonUFS=(Path="Build/Secrets")
+│   └── DefaultGame.ini       ← +DirectoriesToAlwaysStageAsNonUFS=(Path="Secrets")
 ├── Content/
 │   ├── BP_AssemblyLineGameMode.uasset
 │   ├── BP_BilliardBucket.uasset
@@ -433,12 +433,12 @@ AssemblyLineSimul/
 
 | Service | Endpoint | Purpose | Where the key lives |
 | --- | --- | --- | --- |
-| **Anthropic Messages** | `POST /v1/messages` | Powers every station's `ProcessBucket` (Generator/Filter/Sorter/Checker reasoning) and the chat subsystem (per‑agent dialogue + rule updates). Default model `claude-sonnet-4-6`. | `Build/Secrets/AnthropicAPIKey.txt` (preferred — auto‑staged into packaged builds) or `Saved/AnthropicAPIKey.txt`. |
-| **OpenAI Whisper** | `POST /v1/audio/transcriptions` | Push‑to‑talk speech → text. Multipart upload of M4A/AAC, `model=whisper-1`, `language=en`. | `Build/Secrets/OpenAIAPIKey.txt` or `Saved/OpenAIAPIKey.txt`. |
+| **Anthropic Messages** | `POST /v1/messages` | Powers every station's `ProcessBucket` (Generator/Filter/Sorter/Checker reasoning) and the chat subsystem (per‑agent dialogue + rule updates). Default model `claude-sonnet-4-6`. | `Content/Secrets/AnthropicAPIKey.txt` (preferred — auto‑staged into packaged builds) or `Saved/AnthropicAPIKey.txt`. |
+| **OpenAI Whisper** | `POST /v1/audio/transcriptions` | Push‑to‑talk speech → text. Multipart upload of M4A/AAC, `model=whisper-1`, `language=en`. | `Content/Secrets/OpenAIAPIKey.txt` or `Saved/OpenAIAPIKey.txt`. |
 | **macOS `say`** | local fork/exec | Text → speech for every TTS line (chat replies, hail handshake, Checker verdicts, rule‑updated confirmations). | n/a — bundled with macOS. |
 
 `UClaudeAPISubsystem::LoadAPIKey` and `UOpenAIAPISubsystem::LoadAPIKey`
-both check `Saved/` then `Build/Secrets/` and log a `Display`‑level
+both check `Saved/` then `Content/Secrets/` and log a `Display`‑level
 line on success. With Substrate / Lumen / GPU‑Lightmass etc. the
 default UE 5.7 RHI works out of the box.
 
@@ -448,8 +448,8 @@ default UE 5.7 RHI works out of the box.
 
 The package will contain:
 
-- `<App>.app/Contents/UE/AssemblyLineSimul/Build/Secrets/AnthropicAPIKey.txt`
-- `<App>.app/Contents/UE/AssemblyLineSimul/Build/Secrets/OpenAIAPIKey.txt`
+- `<App>.app/Contents/UE/AssemblyLineSimul/Content/Secrets/AnthropicAPIKey.txt`
+- `<App>.app/Contents/UE/AssemblyLineSimul/Content/Secrets/OpenAIAPIKey.txt`
 
 …both auto‑staged via the `+DirectoriesToAlwaysStageAsNonUFS` rule in
 `Config/DefaultGame.ini`. **No manual key‑copy step needed**, and the

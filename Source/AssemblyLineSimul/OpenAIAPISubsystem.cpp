@@ -29,8 +29,8 @@ void UOpenAIAPISubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UOpenAIAPISubsystem::LoadAPIKey()
 {
 	const TArray<FString> Candidates = {
-		FPaths::ProjectSavedDir() / TEXT("OpenAIAPIKey.txt"),
-		FPaths::ProjectDir()      / TEXT("Build/Secrets/OpenAIAPIKey.txt"),
+		FPaths::ProjectSavedDir()   / TEXT("OpenAIAPIKey.txt"),
+		FPaths::ProjectContentDir() / TEXT("Secrets/OpenAIAPIKey.txt"),
 	};
 
 	for (const FString& Path : Candidates)

@@ -19,12 +19,14 @@ void UClaudeAPISubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UClaudeAPISubsystem::LoadAPIKey()
 {
 	// Search in priority order:
-	//   1. Sandboxed Saved/  — where the editor and a manually-overridden packaged build look.
-	//   2. Build/Secrets/    — staged into the .app via DirectoriesToAlwaysStageAsNonUFS so
-	//                          packaged builds get the key without a manual post-package copy.
+	//   1. Sandboxed Saved/         — where the editor and a manually-overridden packaged build look.
+	//   2. Content/Secrets/         — staged into the .app via DirectoriesToAlwaysStageAsNonUFS
+	//                                 so packaged builds get the key without a manual copy.
+	//                                 (Build/Secrets/ used to live here but UAT resolves the
+	//                                 staging Path relative to Content/, so it never staged.)
 	const TArray<FString> Candidates = {
-		FPaths::ProjectSavedDir() / TEXT("AnthropicAPIKey.txt"),
-		FPaths::ProjectDir() / TEXT("Build/Secrets/AnthropicAPIKey.txt"),
+		FPaths::ProjectSavedDir()   / TEXT("AnthropicAPIKey.txt"),
+		FPaths::ProjectContentDir() / TEXT("Secrets/AnthropicAPIKey.txt"),
 	};
 
 	for (const FString& Path : Candidates)
