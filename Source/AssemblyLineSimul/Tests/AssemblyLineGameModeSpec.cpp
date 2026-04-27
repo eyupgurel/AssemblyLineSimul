@@ -9,8 +9,11 @@
 #include "Station.h"
 #include "TestStations.h"
 #include "WorkerRobot.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 
@@ -134,6 +137,80 @@ void FAssemblyLineGameModeSpec::Define()
 			if (!Director) return;
 			TestEqual(TEXT("Director.BucketClass matches GameMode's"),
 				Director->BucketClass.Get(), GM->BucketClass.Get());
+		});
+	});
+
+	Describe("SpawnFloor (Story 20)", [this]()
+	{
+		auto CountFloorActors = [](UWorld* World) -> int32
+		{
+			int32 N = 0;
+			for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+			{
+				if (It->Tags.Contains(TEXT("AssemblyLineFloor"))) ++N;
+			}
+			return N;
+		};
+
+		It("does NOT spawn a floor actor when FloorMesh is unset", [this, CountFloorActors]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_FloorMissing"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnAssemblyLine();
+			GM->SpawnFloor();
+
+			TestEqual(TEXT("zero floor actors when FloorMesh is unset"),
+				CountFloorActors(TW.World), 0);
+		});
+
+		It("spawns FloorTilesX × FloorTilesY tile actors, each with the assigned "
+		   "mesh and per-tile FloorScale, when FloorMesh is set", [this, CountFloorActors]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_FloorAssigned"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			// Real engine mesh — has non-zero bounds, so SpawnFloor's tile-sizing
+			// math (mesh extent × scale) actually works.
+			UStaticMesh* TestMesh = LoadObject<UStaticMesh>(
+				nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+			TestNotNull(TEXT("loaded engine cube"), TestMesh);
+			if (!TestMesh) return;
+			GM->FloorMesh = TSoftObjectPtr<UStaticMesh>(TestMesh);
+			GM->FloorScale = FVector(1.f, 1.f, 1.f);
+			GM->FloorTilesX = 4;
+			GM->FloorTilesY = 3;
+
+			GM->SpawnAssemblyLine();
+			GM->SpawnFloor();
+
+			TestEqual(TEXT("FloorTilesX × FloorTilesY tile actors"),
+				CountFloorActors(TW.World), 4 * 3);
+
+			AStaticMeshActor* AnyTile = nullptr;
+			for (TActorIterator<AStaticMeshActor> It(TW.World); It; ++It)
+			{
+				if (It->Tags.Contains(TEXT("AssemblyLineFloor"))) { AnyTile = *It; break; }
+			}
+			if (!AnyTile) return;
+
+			TestEqual(TEXT("tile scale matches per-tile FloorScale"),
+				AnyTile->GetActorScale3D(), GM->FloorScale);
+			if (UStaticMeshComponent* Smc = AnyTile->GetStaticMeshComponent())
+			{
+				TestTrue(TEXT("tile mesh is the assigned FloorMesh"),
+					Smc->GetStaticMesh() == TestMesh);
+			}
 		});
 	});
 

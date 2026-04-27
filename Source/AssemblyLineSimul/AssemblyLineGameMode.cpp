@@ -12,7 +12,10 @@
 #include "VoiceSubsystem.h"
 #include "WorkerRobot.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "EnhancedInputComponent.h"
@@ -84,6 +87,62 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 				Robot->ApplyTint(*Tint);
 			}
 			Director->RegisterRobot(Robot);
+		}
+	}
+}
+
+void AAssemblyLineGameMode::SpawnFloor()
+{
+	if (FloorMesh.IsNull()) return;
+	UStaticMesh* Mesh = FloorMesh.LoadSynchronous();
+	if (!Mesh) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	const FVector MeshSize = Mesh->GetBoundingBox().GetSize();
+	const float TileSizeX = MeshSize.X * FloorScale.X;
+	const float TileSizeY = MeshSize.Y * FloorScale.Y;
+	if (TileSizeX <= 0.f || TileSizeY <= 0.f) return;
+
+	const int32 StationCount = 4;
+	const float LineSpan = static_cast<float>(StationCount - 1) * StationSpacing;
+	const FVector LineCenter = LineOrigin + FVector(LineSpan * 0.5f, 0.f, 0.f);
+	// Worker capsule half-height 90 cm × actor scale 1.5 → feet at LineOrigin.Z - 135.
+	const float FloorZ = LineOrigin.Z - 135.f + FloorOffset.Z;
+
+	const FVector2D BoundsCenter(LineCenter.X + FloorOffset.X, LineCenter.Y + FloorOffset.Y);
+	const int32 TilesX = FloorTilesX;
+	const int32 TilesY = FloorTilesY;
+	const float OriginX = BoundsCenter.X - 0.5f * (TilesX - 1) * TileSizeX;
+	const float OriginY = BoundsCenter.Y - 0.5f * (TilesY - 1) * TileSizeY;
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	// Deferred so we can flip the SMC to Movable mobility and swap in the mesh
+	// before the actor finishes constructing — required for runtime mesh swap.
+	Params.bDeferConstruction = true;
+
+	for (int32 IX = 0; IX < TilesX; ++IX)
+	{
+		for (int32 IY = 0; IY < TilesY; ++IY)
+		{
+			const FVector TileLoc(
+				OriginX + static_cast<float>(IX) * TileSizeX,
+				OriginY + static_cast<float>(IY) * TileSizeY,
+				FloorZ);
+
+			AStaticMeshActor* Tile = World->SpawnActor<AStaticMeshActor>(
+				AStaticMeshActor::StaticClass(), TileLoc, FRotator::ZeroRotator, Params);
+			if (!Tile) continue;
+			Tile->Tags.AddUnique(TEXT("AssemblyLineFloor"));
+			if (UStaticMeshComponent* Smc = Tile->GetStaticMeshComponent())
+			{
+				Smc->SetMobility(EComponentMobility::Movable);
+				Smc->SetStaticMesh(Mesh);
+				Smc->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			}
+			Tile->FinishSpawning(FTransform(FRotator::ZeroRotator, TileLoc, FloorScale));
 		}
 	}
 }
@@ -418,6 +477,7 @@ void AAssemblyLineGameMode::BeginPlay()
 	}
 
 	SpawnAssemblyLine();
+	SpawnFloor();
 	SpawnCinematicDirector();
 	SpawnFeedback();
 	SpawnChatWidget();

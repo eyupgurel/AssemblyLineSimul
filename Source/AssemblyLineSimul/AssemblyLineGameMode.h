@@ -5,6 +5,7 @@
 #include "AssemblyLineTypes.h"
 #include "AssemblyLineGameMode.generated.h"
 
+class UStaticMesh;
 class USkeletalMesh;
 class UStationTalkWidget;
 class UAgentChatWidget;
@@ -50,9 +51,39 @@ public:
 	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
 	float StationWorkDuration = 5.f;
 
+	// Story 20 — industrial floor under the line. If unset, no floor is spawned
+	// (test environments and projects without the asset pack stay unaffected).
+	// Production BP_AssemblyLineGameMode assigns SM_Metallic_Floor here.
+	UPROPERTY(EditAnywhere, Category = "AssemblyLine|Floor")
+	TSoftObjectPtr<UStaticMesh> FloorMesh;
+
+	// Per-tile scale. Default 1 means each tile is the mesh's native size with
+	// no UV stretching. Bump uniformly if your source mesh is too small.
+	UPROPERTY(EditAnywhere, Category = "AssemblyLine|Floor")
+	FVector FloorScale = FVector(1.f, 1.f, 1.f);
+
+	// Big fixed grid centered on the line. Defaults overshoot every cinematic
+	// shot so the ground is invisible under the floor in every angle. Bump
+	// higher if you ever zoom out further.
+	UPROPERTY(EditAnywhere, Category = "AssemblyLine|Floor", meta = (ClampMin = "1"))
+	int32 FloorTilesX = 60;
+
+	UPROPERTY(EditAnywhere, Category = "AssemblyLine|Floor", meta = (ClampMin = "1"))
+	int32 FloorTilesY = 60;
+
+	// Added to the computed floor center (worker-feet level under the line).
+	// Default lifts the grid 85 cm so it sits flush with the station cube
+	// bottoms instead of dangling 85 cm below them.
+	UPROPERTY(EditAnywhere, Category = "AssemblyLine|Floor")
+	FVector FloorOffset = FVector(0.f, 0.f, 85.f);
+
 	// Spawns 4 stations + 4 workers + cinematic camera and registers them with the Director.
 	// Public so tests can drive without running the full BeginPlay path.
 	void SpawnAssemblyLine();
+
+	// Spawns the FloorMesh under the line, centered + scaled by FloorScale.
+	// No-op when FloorMesh is unset. Public for tests.
+	void SpawnFloor();
 
 	// Spawns the ACinematicCameraDirector with a default 3-shot sequence (wide / mid / checker).
 	// Public so tests can verify spawn without the full BeginPlay path.
