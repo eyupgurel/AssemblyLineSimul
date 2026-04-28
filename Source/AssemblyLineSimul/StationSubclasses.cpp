@@ -212,6 +212,9 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 
 			B->Contents = MoveTemp(Numbers);
 			B->RefreshContents();
+			// Story 24 — highlight the surviving subset so the audience sees
+			// "the Filter selected these" while the bucket sits on its dock.
+			B->ApplyGoldEmissiveToBalls();
 
 			FStationProcessResult R; R.bAccepted = true;
 			OnComplete.ExecuteIfBound(R);

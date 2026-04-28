@@ -162,6 +162,38 @@ void FBucketSpec::Define()
 			}
 		});
 	});
+
+	Describe("ApplyGoldEmissiveToBalls (Story 24 — filter-selected glow)", [this]()
+	{
+		It("swaps every ball's material to a MID of EmissiveMeshMaterial", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_FilterSelectedGlow"));
+			ABucket* Bucket = SpawnBucket(TW.World);
+			if (!Bucket) return;
+
+			Bucket->Contents = { 3, 5, 7 };
+			Bucket->RefreshContents();
+			Bucket->ApplyGoldEmissiveToBalls();
+
+			UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
+				nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
+			TestNotNull(TEXT("EmissiveMeshMaterial loaded"), Emissive);
+			if (!Emissive) return;
+
+			TestEqual(TEXT("3 balls"), Bucket->NumberBalls.Num(), 3);
+			for (int32 i = 0; i < Bucket->NumberBalls.Num(); ++i)
+			{
+				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(
+					Bucket->NumberBalls[i]->GetMaterial(0));
+				TestNotNull(*FString::Printf(TEXT("ball %d MID present"), i), MID);
+				if (MID)
+				{
+					TestEqual(*FString::Printf(TEXT("ball %d MID parent is EmissiveMeshMaterial"), i),
+						MID->Parent.Get(), Emissive);
+				}
+			}
+		});
+	});
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

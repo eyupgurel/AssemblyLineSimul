@@ -261,3 +261,19 @@ void ABucket::RefreshContents()
 
 	}
 }
+
+void ABucket::ApplyGoldEmissiveToBalls()
+{
+	UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
+	if (!Emissive) return;
+	for (UStaticMeshComponent* Ball : NumberBalls)
+	{
+		if (!Ball) continue;
+		if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Emissive, this))
+		{
+			MID->SetVectorParameterValue(TEXT("Color"), GlassTint);
+			Ball->SetMaterial(0, MID);
+		}
+	}
+}
