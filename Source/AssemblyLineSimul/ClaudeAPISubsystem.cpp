@@ -78,6 +78,10 @@ void UClaudeAPISubsystem::SendMessage(const FString& Prompt, FClaudeComplete OnC
 	FJsonSerializer::Serialize(Body.ToSharedRef(), Writer);
 	Req->SetContentAsString(JsonStr);
 
+	// Story 29 — log every prompt going to Claude so the operator can see
+	// exactly what each agent is asking. Companion ← log fires on success below.
+	UE_LOG(LogClaudeAPI, Display, TEXT("→ %s"), *Prompt);
+
 	Req->OnProcessRequestComplete().BindLambda(
 		[OnComplete](FHttpRequestPtr, FHttpResponsePtr Response, bool bOk)
 		{
@@ -95,6 +99,9 @@ void UClaudeAPISubsystem::SendMessage(const FString& Prompt, FClaudeComplete OnC
 				OnComplete.ExecuteIfBound(false, Body);
 				return;
 			}
+			// Story 29 — companion to the → log above. Logs the raw response body
+			// so the operator can see what Claude actually said.
+			UE_LOG(LogClaudeAPI, Display, TEXT("← %s"), *Body);
 
 			TSharedPtr<FJsonObject> Root;
 			const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Body);
