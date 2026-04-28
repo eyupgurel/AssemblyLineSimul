@@ -262,13 +262,16 @@ void ABucket::RefreshContents()
 	}
 }
 
-void ABucket::ApplyGoldEmissiveToBalls()
+void ABucket::HighlightBallsAtIndices(const TArray<int32>& Indices)
 {
+	if (Indices.Num() == 0) return;
 	UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
 		nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
 	if (!Emissive) return;
-	for (UStaticMeshComponent* Ball : NumberBalls)
+	for (int32 i : Indices)
 	{
+		if (!NumberBalls.IsValidIndex(i)) continue;
+		UStaticMeshComponent* Ball = NumberBalls[i];
 		if (!Ball) continue;
 		if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Emissive, this))
 		{
@@ -277,3 +280,4 @@ void ABucket::ApplyGoldEmissiveToBalls()
 		}
 	}
 }
+

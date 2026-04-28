@@ -163,17 +163,17 @@ void FBucketSpec::Define()
 		});
 	});
 
-	Describe("ApplyGoldEmissiveToBalls (Story 24 — filter-selected glow)", [this]()
+	Describe("HighlightBallsAtIndices (Story 25 — filter selection preview)", [this]()
 	{
-		It("swaps every ball's material to a MID of EmissiveMeshMaterial", [this]()
+		It("only the named indices get an EmissiveMeshMaterial MID; others untouched", [this]()
 		{
-			FScopedTestWorld TW(TEXT("BucketSpec_FilterSelectedGlow"));
+			FScopedTestWorld TW(TEXT("BucketSpec_HighlightSubset"));
 			ABucket* Bucket = SpawnBucket(TW.World);
 			if (!Bucket) return;
 
 			Bucket->Contents = { 3, 5, 7 };
 			Bucket->RefreshContents();
-			Bucket->ApplyGoldEmissiveToBalls();
+			Bucket->HighlightBallsAtIndices({ 0, 2 });
 
 			UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
 				nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
@@ -181,14 +181,46 @@ void FBucketSpec::Define()
 			if (!Emissive) return;
 
 			TestEqual(TEXT("3 balls"), Bucket->NumberBalls.Num(), 3);
-			for (int32 i = 0; i < Bucket->NumberBalls.Num(); ++i)
+
+			UMaterialInstanceDynamic* MID0 = Cast<UMaterialInstanceDynamic>(
+				Bucket->NumberBalls[0]->GetMaterial(0));
+			TestNotNull(TEXT("ball 0 highlighted MID present"), MID0);
+			if (MID0) TestEqual(TEXT("ball 0 MID parent is EmissiveMeshMaterial"),
+				MID0->Parent.Get(), Emissive);
+
+			UMaterialInstanceDynamic* MID1 = Cast<UMaterialInstanceDynamic>(
+				Bucket->NumberBalls[1]->GetMaterial(0));
+			if (MID1)
 			{
-				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(
-					Bucket->NumberBalls[i]->GetMaterial(0));
-				TestNotNull(*FString::Printf(TEXT("ball %d MID present"), i), MID);
-				if (MID)
+				TestNotEqual(TEXT("ball 1 NOT EmissiveMeshMaterial"),
+					MID1->Parent.Get(), Emissive);
+			}
+
+			UMaterialInstanceDynamic* MID2 = Cast<UMaterialInstanceDynamic>(
+				Bucket->NumberBalls[2]->GetMaterial(0));
+			TestNotNull(TEXT("ball 2 highlighted MID present"), MID2);
+			if (MID2) TestEqual(TEXT("ball 2 MID parent is EmissiveMeshMaterial"),
+				MID2->Parent.Get(), Emissive);
+		});
+
+		It("empty Indices is a no-op — no ball gets EmissiveMeshMaterial", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_HighlightEmpty"));
+			ABucket* Bucket = SpawnBucket(TW.World);
+			if (!Bucket) return;
+
+			Bucket->Contents = { 1, 2 };
+			Bucket->RefreshContents();
+			Bucket->HighlightBallsAtIndices({});
+
+			UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
+				nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
+			for (UStaticMeshComponent* Ball : Bucket->NumberBalls)
+			{
+				UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Ball->GetMaterial(0));
+				if (MID && Emissive)
 				{
-					TestEqual(*FString::Printf(TEXT("ball %d MID parent is EmissiveMeshMaterial"), i),
+					TestNotEqual(TEXT("no ball got EmissiveMeshMaterial"),
 						MID->Parent.Get(), Emissive);
 				}
 			}

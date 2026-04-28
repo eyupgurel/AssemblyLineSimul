@@ -30,6 +30,14 @@ class ASSEMBLYLINESIMUL_API AFilterStation : public AStation
 public:
 	AFilterStation();
 	virtual void ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete) override;
+
+	// Story 25 — for each value in KeptValues (in order), finds its first
+	// matching, not-already-claimed index in InputContents. Returns the matched
+	// indices in the order the kept values were supplied. Used to drive the
+	// 1-second selection-preview highlight on the bucket before the rejected
+	// balls are dropped.
+	static TArray<int32> FindKeptIndices(
+		const TArray<int32>& InputContents, const TArray<int32>& KeptValues);
 };
 
 UCLASS()

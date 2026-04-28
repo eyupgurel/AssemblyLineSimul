@@ -157,6 +157,26 @@ AFilterStation::AFilterStation()
 	CurrentRule = TEXT("Keep only the prime numbers; remove non-primes.");
 }
 
+TArray<int32> AFilterStation::FindKeptIndices(
+	const TArray<int32>& InputContents, const TArray<int32>& KeptValues)
+{
+	TArray<int32> Result;
+	TSet<int32> Claimed;
+	for (int32 KeptValue : KeptValues)
+	{
+		for (int32 i = 0; i < InputContents.Num(); ++i)
+		{
+			if (InputContents[i] == KeptValue && !Claimed.Contains(i))
+			{
+				Result.Add(i);
+				Claimed.Add(i);
+				break;
+			}
+		}
+	}
+	return Result;
+}
+
 void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
 {
 	if (!Bucket)
@@ -210,14 +230,36 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 				return;
 			}
 
-			B->Contents = MoveTemp(Numbers);
-			B->RefreshContents();
-			// Story 24 — highlight the surviving subset so the audience sees
-			// "the Filter selected these" while the bucket sits on its dock.
-			B->ApplyGoldEmissiveToBalls();
+			// Story 25 — selection preview: keep all input balls visible,
+			// glow only the kept ones for 1 s, then drop the rejected.
+			const TArray<int32> KeptIndices = AFilterStation::FindKeptIndices(B->Contents, Numbers);
+			B->HighlightBallsAtIndices(KeptIndices);
 
-			FStationProcessResult R; R.bAccepted = true;
-			OnComplete.ExecuteIfBound(R);
+			UWorld* W = Self->GetWorld();
+			if (!W)
+			{
+				B->Contents = MoveTemp(Numbers);
+				B->RefreshContents();
+				FStationProcessResult R; R.bAccepted = true;
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+
+			TWeakObjectPtr<ABucket> WeakBucket2(B);
+			TArray<int32> KeptValues = MoveTemp(Numbers);
+			FTimerHandle Th;
+			W->GetTimerManager().SetTimer(Th,
+				FTimerDelegate::CreateLambda([WeakBucket2, KeptValues, OnComplete]()
+				{
+					if (ABucket* B2 = WeakBucket2.Get())
+					{
+						B2->Contents = KeptValues;
+						B2->RefreshContents();
+					}
+					FStationProcessResult R; R.bAccepted = true;
+					OnComplete.ExecuteIfBound(R);
+				}),
+				1.0f, /*bLoop=*/false);
 		}));
 }
 

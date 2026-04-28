@@ -60,11 +60,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bucket")
 	void RefreshContents();
 
-	// Story 24 — paint every current ball with EmissiveMeshMaterial tinted to
-	// GlassTint, signalling "selected by the Filter". Auto-cleared next time
-	// RefreshContents rebuilds the balls.
+	// Story 25 — paints only the named ball indices with EmissiveMeshMaterial
+	// tinted to GlassTint. Other balls keep their normal material. Used by
+	// AFilterStation to flag the kept subset for 1 s before dropping the rest.
 	UFUNCTION(BlueprintCallable, Category = "Bucket")
-	void ApplyGoldEmissiveToBalls();
+	void HighlightBallsAtIndices(const TArray<int32>& Indices);
 
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
