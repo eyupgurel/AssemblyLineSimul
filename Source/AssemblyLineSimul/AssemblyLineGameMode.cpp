@@ -349,6 +349,15 @@ void AAssemblyLineGameMode::OnVoiceTalkStarted()
 		}
 		return;
 	}
+	// Story 26 — silence any in-flight agent voice the moment recording starts
+	// so the operator isn't talking over an agent.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UAgentChatSubsystem* Chat = GI->GetSubsystem<UAgentChatSubsystem>())
+		{
+			Chat->StopSpeaking();
+		}
+	}
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(/*Key=*/42, 30.f, FColor::Red, TEXT("● REC"));

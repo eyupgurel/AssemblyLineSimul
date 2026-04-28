@@ -447,9 +447,9 @@ void ACheckerStation::HandleVerdictReply(bool bSuccess, const FString& Response,
 	{
 		R.bAccepted = true;
 		R.Reason = TEXT("LLM unreachable, accepting by default");
-		// SpeakAloud (TTS) so the audience hears the fallback even when Claude
-		// is down — Story 15 + the "no silent verdicts" contract.
-		SpeakAloud(FString::Printf(TEXT("LLM unreachable — %s"), *Response));
+		// Story 26 — terse on the fallback PASS too. The detail still goes to
+		// the log via R.Reason; the audience just hears "Pass."
+		SpeakAloud(TEXT("Pass."));
 		OnComplete.ExecuteIfBound(R);
 		return;
 	}
@@ -497,7 +497,15 @@ void ACheckerStation::HandleVerdictReply(bool bSuccess, const FString& Response,
 	// SpeakAloud → macOS `say`. The verdict path bypasses
 	// AgentChatSubsystem::HandleClaudeResponse, so without this the Checker
 	// would silently flash red while the audience waits for an explanation.
-	SpeakAloud(FString::Printf(TEXT("[%s] %s"),
-		R.bAccepted ? TEXT("PASS") : TEXT("REJECT"), *R.Reason));
+	// Story 26 — PASS is terse ("Pass."); REJECT keeps the verbose reason
+	// so the audience hears WHAT went wrong and which station to blame.
+	if (R.bAccepted)
+	{
+		SpeakAloud(TEXT("Pass."));
+	}
+	else
+	{
+		SpeakAloud(FString::Printf(TEXT("[REJECT] %s"), *R.Reason));
+	}
 	OnComplete.ExecuteIfBound(R);
 }

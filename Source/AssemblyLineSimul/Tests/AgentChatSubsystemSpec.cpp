@@ -132,6 +132,29 @@ void FAgentChatSubsystemSpec::Define()
 				Prompt.Contains(TEXT("hello agent")));
 		});
 	});
+
+	Describe("StopSpeaking (Story 26 — push-to-talk silences agents)", [this]()
+	{
+		It("clears the active-say-handles list so subsequent SpeakResponse calls "
+		   "see an empty queue", [this]()
+		{
+#if PLATFORM_MAC
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Sub = NewObject<UAgentChatSubsystem>(GI);
+			TestNotNull(TEXT("subsystem instantiated"), Sub);
+			if (!Sub) return;
+
+			Sub->SpeakResponse(TEXT("first"));
+			Sub->SpeakResponse(TEXT("second"));
+			TestTrue(TEXT("at least one say handle tracked after SpeakResponse"),
+				Sub->ActiveSayHandlesNumForTesting() >= 1);
+
+			Sub->StopSpeaking();
+			TestEqual(TEXT("StopSpeaking empties the handle store"),
+				Sub->ActiveSayHandlesNumForTesting(), 0);
+#endif
+		});
+	});
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

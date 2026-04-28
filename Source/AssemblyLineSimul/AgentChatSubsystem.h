@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "HAL/PlatformProcess.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "AssemblyLineTypes.h"
 #include "AgentChatSubsystem.generated.h"
@@ -41,10 +42,21 @@ public:
 	// can push arbitrary text through the same macOS `say` pipeline used for chat
 	// replies. No-op on non-Mac platforms. Records the last input into
 	// LastSpokenForTesting so specs can assert the audible path was invoked.
-	void SpeakResponse(const FString& Text) const;
+	void SpeakResponse(const FString& Text);
+
+	// Story 26 — push-to-talk silences agents. Terminates every in-flight
+	// `/usr/bin/say` subprocess this subsystem spawned. AAssemblyLineGameMode
+	// calls this from OnVoiceTalkStarted so the operator's first syllable
+	// cuts off any agent that's mid-line. Mac-only; no-op elsewhere.
+	UFUNCTION(BlueprintCallable, Category = "AgentChat")
+	void StopSpeaking();
 
 	// Inspection hook for tests — set every time SpeakResponse is called.
 	mutable FString LastSpokenForTesting;
+
+	// Story 26 test hook — exposes the live count of tracked say-subprocess
+	// handles so specs can assert StopSpeaking emptied the store.
+	int32 ActiveSayHandlesNumForTesting() const { return ActiveSayHandles.Num(); }
 
 	// Public for tests — synthesise a Claude reply (the JSON body that would have
 	// come back from the HTTP call) and feed it through the same code path the
@@ -57,4 +69,8 @@ private:
 	FString GetCurrentRule(EStationType StationType) const;
 	FString GetCurrentBucketContents(EStationType StationType) const;
 	FString StationTypeName(EStationType StationType) const;
+
+	// Story 26 — every SpeakResponse parks its FProcHandle here so StopSpeaking
+	// can SIGKILL the lot. Pruned of dead entries on each SpeakResponse call.
+	TArray<FProcHandle> ActiveSayHandles;
 };

@@ -171,12 +171,24 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 	OnAgentResponded.Broadcast(StationType);
 }
 
-void UAgentChatSubsystem::SpeakResponse(const FString& Text) const
+void UAgentChatSubsystem::SpeakResponse(const FString& Text)
 {
 	// Record for tests on every call (cheap; doesn't depend on platform).
 	LastSpokenForTesting = Text;
 #if PLATFORM_MAC
 	if (Text.IsEmpty()) return;
+
+	// Story 26 — drop already-finished say processes from the store so it
+	// stays bounded. Non-running handles still need CloseProc to release.
+	for (int32 i = ActiveSayHandles.Num() - 1; i >= 0; --i)
+	{
+		if (!FPlatformProcess::IsProcRunning(ActiveSayHandles[i]))
+		{
+			FPlatformProcess::CloseProc(ActiveSayHandles[i]);
+			ActiveSayHandles.RemoveAt(i);
+		}
+	}
+
 	const FString TempPath = FPaths::ProjectSavedDir() / TEXT("agent_say_buffer.txt");
 	if (!FFileHelper::SaveStringToFile(Text, *TempPath)) return;
 
@@ -185,7 +197,26 @@ void UAgentChatSubsystem::SpeakResponse(const FString& Text) const
 		TEXT("/usr/bin/say"), *Args,
 		/*bLaunchDetached=*/true, /*bLaunchHidden=*/true, /*bLaunchReallyHidden=*/true,
 		nullptr, 0, nullptr, nullptr, nullptr);
-	if (H.IsValid()) FPlatformProcess::CloseProc(H);
+	// Story 26 — store the handle (don't CloseProc immediately like the old
+	// code did) so StopSpeaking can SIGKILL the say process when the
+	// operator pushes Space. CloseProc happens in StopSpeaking or in the
+	// dead-handle prune above.
+	if (H.IsValid()) ActiveSayHandles.Add(H);
+#endif
+}
+
+void UAgentChatSubsystem::StopSpeaking()
+{
+#if PLATFORM_MAC
+	for (FProcHandle& H : ActiveSayHandles)
+	{
+		if (FPlatformProcess::IsProcRunning(H))
+		{
+			FPlatformProcess::TerminateProc(H);
+		}
+		FPlatformProcess::CloseProc(H);
+	}
+	ActiveSayHandles.Reset();
 #endif
 }
 

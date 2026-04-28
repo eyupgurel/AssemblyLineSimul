@@ -57,7 +57,7 @@ void FStationSpec::Define()
 
 	Describe("Checker verdict-speak contract (PASS and REJECT both audible)", [this]()
 	{
-		It("speaks the PASS verdict aloud through the chat subsystem (TTS), not just the panel", [this]()
+		It("speaks PASS verdicts as just \"Pass.\" — terse (Story 26)", [this]()
 		{
 			FScopedTestWorld TW(TEXT("StationSpec_CheckerPassSpeaks"));
 			FActorSpawnParameters Params;
@@ -76,10 +76,8 @@ void FStationSpec::Define()
 				TEXT("{\"verdict\":\"pass\",\"reason\":\"All four primes sorted ascending.\",\"send_back_to\":null}"),
 				Sink);
 
-			TestTrue(TEXT("PASS reached the macOS-say pipeline"),
-				Chat->LastSpokenForTesting.StartsWith(TEXT("[PASS]")));
-			TestTrue(TEXT("PASS reason embedded"),
-				Chat->LastSpokenForTesting.Contains(TEXT("All four primes sorted ascending.")));
+			TestEqual(TEXT("PASS speaks just \"Pass.\""),
+				Chat->LastSpokenForTesting, FString(TEXT("Pass.")));
 		});
 
 		It("speaks the REJECT verdict aloud (the bug the operator hit) — verbose "
@@ -111,7 +109,8 @@ void FStationSpec::Define()
 				Chat->LastSpokenForTesting.Contains(TEXT("Filter")));
 		});
 
-		It("speaks the LLM-unreachable fallback aloud too (no silent failures)", [this]()
+		It("speaks \"Pass.\" on the LLM-unreachable fallback too (Story 26 — fallback "
+		   "PASSes the bucket by default and stays terse)", [this]()
 		{
 			FScopedTestWorld TW(TEXT("StationSpec_CheckerUnreachableSpeaks"));
 			FActorSpawnParameters Params;
@@ -127,8 +126,8 @@ void FStationSpec::Define()
 			FStationProcessComplete Sink;
 			Checker->HandleVerdictReply(/*bSuccess=*/false, TEXT("HTTP failure"), Sink);
 
-			TestTrue(TEXT("Unreachable fallback reached macOS-say"),
-				Chat->LastSpokenForTesting.Contains(TEXT("LLM unreachable")));
+			TestEqual(TEXT("Unreachable fallback speaks just \"Pass.\""),
+				Chat->LastSpokenForTesting, FString(TEXT("Pass.")));
 		});
 	});
 

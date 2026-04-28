@@ -70,8 +70,9 @@ When the cycle starts:
    chain ("Generator did X, Filter did Y, Sorter did Z — does this
    bucket fit?").
    - **PASS** → green light flashes, the camera holds a victory
-     close-up on the accepted bucket, the Checker speaks the verdict
-     aloud, then the next cycle spawns from the Generator.
+     close-up on the accepted bucket, the Checker says **"Pass."** —
+     a single word, no justification, since the green flash already
+     conveys success — then the next cycle spawns.
    - **REJECT** → red light flashes, the Checker complains aloud
      naming every offending value and the responsible station, the
      rework worker carries the bucket back, and the **camera chases
@@ -86,6 +87,10 @@ acknowledges via TTS and every subsequent bucket flows through the
 new rule. The Checker's derived rule auto-updates too, so it
 correctly catches buckets that made it through Filter on the *old*
 rule. Press **Tab** to open the chat HUD if you'd rather type.
+
+Pressing Space also **silences** any in-flight agent voice (Story
+26) — if the Checker is mid-verdict and you start speaking, the
+Checker cuts off so you're not fighting it for the audio channel.
 
 ## Quick start
 
@@ -370,6 +375,10 @@ spec under `Stories/`.
 - **[Story 24](Stories/Story_24_Filter_Selected_Glow.md)** — *Superseded by Story 25.* First attempt at gold-glow on filter survivors painted every post-filter ball gold, but by then the rejected balls had already been destroyed — no contrast.
 - **[Story 25](Stories/Story_25_Filter_Selection_Preview.md)** — Filter selection preview: when Claude returns the kept subset, the SELECTED balls glow emissive gold for one second while the REJECTED balls remain visible with their normal painted-number material — audience sees the contrast, then the rejected balls vanish and only survivors continue. New static helper `AFilterStation::FindKeptIndices` maps each kept value to its first-occurrence index in the input bucket (handles duplicates).
 
+### Phase 11 — Operator-experience polish (story 26)
+
+- **[Story 26](Stories/Story_26_Terse_Pass_And_Silence_Agents.md)** — Two pacing fixes for the live demo: (1) the Checker's PASS verdict drops the LLM-generated reason and just says **"Pass."** — the visible green flash already conveys success, so a one-sentence justification was slowing the cycle. REJECT keeps the verbose complaint. (2) Pushing **Space** to talk now silences any in-flight agent voice — `UAgentChatSubsystem::StopSpeaking` terminates every running `/usr/bin/say` subprocess so the operator isn't fighting an agent for the audio channel.
+
 ## Testing
 
 The project uses **UE Automation Specs** (BDD‑style `Describe` / `It`)
@@ -386,21 +395,21 @@ plus one **FunctionalTest** actor for end‑to‑end coverage.
 
 Then `grep -c 'Result={Success}' /tmp/auto.log` for a count.
 
-**Current coverage: 69 specs across 12 spec files plus the FunctionalTest**
+**Current coverage: 70 specs across 12 spec files plus the FunctionalTest**
 (every spec passes against real Anthropic + OpenAI APIs when keys are
 configured; specs that don't need network use synthesised LLM responses
 fed through public test seams).
 
 | Spec file | What it locks down |
 | --- | --- |
-| `AgentChatSubsystemSpec` | Per‑agent history isolation, prompt construction, `SpeakResponse` test hook (`LastSpokenForTesting`), `OnRuleUpdated` broadcast on chat‑driven rule change. |
+| `AgentChatSubsystemSpec` | Per‑agent history isolation, prompt construction, `SpeakResponse` test hook (`LastSpokenForTesting`), `OnRuleUpdated` broadcast on chat‑driven rule change, **`StopSpeaking` (Story 26)** empties the active-say-handle store. |
 | `AssemblyLineDirectorSpec` | Worker phase events re‑broadcast as `OnStationActive`, empty‑bucket‑recycle path (`OnCycleRecycled` fires; non‑empty buckets forward as normal). |
 | `AssemblyLineFeedbackSpec` | Accept/reject light spawning at the bucket location. |
 | `AssemblyLineGameModeSpec` | `SpawnAssemblyLine` propagates `WorkerRobotMeshAsset` / `BucketClass` to spawned actors; `SpawnFloor` (Story 20) tiles `FloorTilesX × FloorTilesY` instances when `FloorMesh` is assigned and is a no-op when unset; cinematic spawns once with shots configured. |
 | `BucketSpec` | Crate construction (12 emissive wireframe edges, inner cube hidden), `RefreshContents` add/remove cycle, billiard material MID wiring, **`HighlightBallsAtIndices` (Story 25) only paints the named indices with `EmissiveMeshMaterial`** — others untouched, empty indices is a no-op. |
 | `CinematicCameraDirectorSpec` | Shot looping/holding, reactive station jumps, return‑to‑resume on idle, **chase enters/exits on cycle events, target updates on second rejection, PASS chase + null‑bucket fallback**. |
 | `OpenAIAPISubsystemSpec` | Whisper multipart body shape: `language=en` pinned, `model=whisper-1`, file part with filename + MIME, raw audio bytes embedded verbatim. |
-| `StationSpec` | `SpeakAloud` routes through chat subsystem TTS (`Chat->LastSpokenForTesting`); Checker PASS/REJECT/LLM-unreachable verdicts all reach the macOS-`say` pipeline. |
+| `StationSpec` | `SpeakAloud` routes through chat subsystem TTS (`Chat->LastSpokenForTesting`); **Checker PASS speaks just "Pass." (Story 26 — terse), REJECT keeps the verbose complaint**, LLM-unreachable PASS fallback also speaks just "Pass." |
 | `StationSubclassesSpec` | **`AFilterStation::FindKeptIndices` (Story 25)** — input/kept index mapping with first-occurrence claiming for duplicates; empty-input and empty-kept edge cases. |
 | `VoiceHailParserSpec` | Canonical hail pattern, case insensitivity, alternative confirmation phrases ("do you copy", "are you there"), rejection of non‑hails, fuzzy match (Levenshtein ≤ 2) for Whisper letter swaps ("filtre"/"soter"). |
 | `VoiceSubsystemSpec` | Initial state, hail switches active agent, sticky‑context command routing, second hail switches agent. |
