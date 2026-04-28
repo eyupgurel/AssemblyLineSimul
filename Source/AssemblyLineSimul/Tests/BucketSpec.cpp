@@ -57,15 +57,22 @@ void FBucketSpec::Define()
 
 	Describe("Construction", [this]()
 	{
-		It("hides the legacy cube and exposes 12 wireframe crate edges", [this]()
+		It("hides the inner cube and shows the 12 emissive-gold wireframe edges", [this]()
 		{
 			FScopedTestWorld TW(TEXT("BucketSpec_Construct"));
 			ABucket* Bucket = SpawnBucket(TW.World);
 			TestNotNull(TEXT("bucket spawned"), Bucket);
 			if (!Bucket) return;
 
-			TestFalse(TEXT("legacy cube hidden"), Bucket->MeshComponent->IsVisible());
-			TestEqual(TEXT("12 crate edges"), Bucket->CrateEdges.Num(), 12);
+			TestFalse(TEXT("inner cube hidden"), Bucket->MeshComponent->IsVisible());
+			TestEqual(TEXT("12 crate edges constructed"), Bucket->CrateEdges.Num(), 12);
+			for (UStaticMeshComponent* Edge : Bucket->CrateEdges)
+			{
+				if (Edge)
+				{
+					TestTrue(TEXT("each crate edge visible"), Edge->IsVisible());
+				}
+			}
 		});
 	});
 

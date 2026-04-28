@@ -69,8 +69,8 @@ ABucket::ABucket()
 		CrateHalfY * 2.f / 100.f,
 		CrateHalfZ * 2.f / 100.f));
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	// Hidden by default — the wireframe edges represent the bucket. OnConstruction shows
-	// the cube and applies the glass material when GlassMaterial is set.
+	// Hidden by default — OnConstruction shows the cube with EmissiveMeshMaterial
+	// to render the bucket as a solid glowing-gold block.
 	MeshComponent->SetVisibility(false);
 
 	// Hide the entire actor at spawn — RefreshContents un-hides it when Contents is non-empty.
@@ -135,35 +135,23 @@ void ABucket::OnConstruction(const FTransform& Transform)
 		CrateHalfY * 2.f / 100.f,
 		CrateHalfZ * 2.f / 100.f));
 
-	UMaterialInterface* Glass = GlassMaterial.LoadSynchronous();
-	const bool bUseGlass = Glass != nullptr;
+	// Demo direction: glowing-gold wireframe bucket — no inner cube, only the
+	// 12 crate edges glow. EmissiveMeshMaterial's Color parameter drives the
+	// emissive output directly so RGB > 1 in GlassTint triggers HDR bloom.
+	MeshComponent->SetVisibility(false);
 
-	if (bUseGlass)
-	{
-		MeshComponent->SetVisibility(true);
-		if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Glass, this))
-		{
-			MID->SetVectorParameterValue(TEXT("BodyTint"), GlassTint);
-			MeshComponent->SetMaterial(0, MID);
-		}
-	}
-	else
-	{
-		MeshComponent->SetVisibility(false);
-	}
-
-	// Hide the cyan wireframe when the glass walls are shown — keep both only if no
-	// glass material is provided (fallback to wireframe-only crate).
-	const FLinearColor EdgeColor(0.4f, 0.95f, 1.0f, 1.f);
+	UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
 	for (UStaticMeshComponent* Edge : CrateEdges)
 	{
 		if (!Edge) continue;
-		Edge->SetVisibility(!bUseGlass);
-		if (!bUseGlass)
+		Edge->SetVisibility(true);
+		if (Emissive)
 		{
-			if (UMaterialInstanceDynamic* MID = Edge->CreateAndSetMaterialInstanceDynamic(0))
+			if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Emissive, this))
 			{
-				MID->SetVectorParameterValue(TEXT("BodyTint"), EdgeColor);
+				MID->SetVectorParameterValue(TEXT("Color"), GlassTint);
+				Edge->SetMaterial(0, MID);
 			}
 		}
 	}

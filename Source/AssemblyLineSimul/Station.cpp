@@ -12,7 +12,6 @@
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
-#include "UObject/ConstructorHelpers.h"
 
 AStation::AStation()
 {
@@ -22,15 +21,13 @@ AStation::AStation()
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
 
+	// Demo direction: no station body / table — buckets appear to float so the
+	// glowing gold wireframe reads cleanly against the floor. The component
+	// stays in the hierarchy as a structural anchor but renders nothing.
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	MeshComponent->SetupAttachment(RootComponent);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
-		TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (CubeFinder.Succeeded())
-	{
-		MeshComponent->SetStaticMesh(CubeFinder.Object);
-		MeshComponent->SetWorldScale3D(FVector(2.0f, 3.0f, 1.0f));
-	}
+	MeshComponent->SetVisibility(false);
+	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	InputSlot = CreateDefaultSubobject<USceneComponent>(TEXT("InputSlot"));
 	InputSlot->SetupAttachment(RootComponent);
@@ -44,12 +41,15 @@ AStation::AStation()
 	WorkerStandPoint->SetupAttachment(RootComponent);
 	WorkerStandPoint->SetRelativeLocation(FVector(-100.f, 130.f, 0.f));
 
+	// WorkTable renders nothing (table hidden), but its relative transform still
+	// positions BucketDockPoint (a child of WorkTable) at the bucket's world Z
+	// — so the dock chain stays load-bearing even with no visible table.
 	WorkTable = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WorkTable"));
 	WorkTable->SetupAttachment(RootComponent);
 	WorkTable->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	WorkTable->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
 	WorkTable->SetRelativeScale3D(FVector(2.5f, 2.0f, 0.15f));
-	if (CubeFinder.Succeeded()) WorkTable->SetStaticMesh(CubeFinder.Object);
+	WorkTable->SetVisibility(false);
 
 	BucketDockPoint = CreateDefaultSubobject<USceneComponent>(TEXT("BucketDockPoint"));
 	BucketDockPoint->SetupAttachment(WorkTable);
