@@ -7,7 +7,6 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
-#include "Components/TextRenderComponent.h"
 #include "Animation/AnimSequence.h"
 #include "Engine/SkeletalMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -97,15 +96,6 @@ AWorkerRobot::AWorkerRobot()
 	CarrySocket = CreateDefaultSubobject<USceneComponent>(TEXT("CarrySocket"));
 	CarrySocket->SetupAttachment(RootComponent);
 	CarrySocket->SetRelativeLocation(FVector(130.f, 0.f, 0.f));
-
-	StateLabel = CreateDefaultSubobject<UTextRenderComponent>(TEXT("StateLabel"));
-	StateLabel->SetupAttachment(RootComponent);
-	StateLabel->SetRelativeLocation(FVector(0.f, 0.f, 180.f));
-	StateLabel->SetHorizontalAlignment(EHTA_Center);
-	StateLabel->SetVerticalAlignment(EVRTA_TextCenter);
-	StateLabel->SetWorldSize(40.f);
-	StateLabel->SetTextRenderColor(FColor::White);
-	StateLabel->SetText(FText::FromString(TEXT("Idle")));
 
 	// Story 19 — green active-speaker glow on the worker. Off by default;
 	// HandleActiveAgentChanged in the GameMode toggles it via SetActive.
@@ -254,7 +244,6 @@ void AWorkerRobot::EnterState(EWorkerState NewState)
 	case EWorkerState::Idle:
 		break;
 	}
-	UpdateLabel();
 }
 
 UAnimSequence* AWorkerRobot::PickAnimationForState(EWorkerState QueryState) const
@@ -277,24 +266,6 @@ void AWorkerRobot::RefreshAnimationForState()
 	SkeletalBodyMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
 	SkeletalBodyMesh->SetAnimation(Target);
 	SkeletalBodyMesh->Play(/*bLooping=*/true);
-}
-
-void AWorkerRobot::UpdateLabel()
-{
-	if (!StateLabel) return;
-	const TCHAR* Name = TEXT("Idle");
-	switch (State)
-	{
-	case EWorkerState::MoveToInput:   Name = TEXT("Fetching bucket"); break;
-	case EWorkerState::PickUp:        Name = TEXT("Picking up"); break;
-	case EWorkerState::MoveToWorkPos: Name = TEXT("Moving to station"); break;
-	case EWorkerState::Working:       Name = TEXT("Working..."); break;
-	case EWorkerState::MoveToOutput:  Name = TEXT("Delivering"); break;
-	case EWorkerState::Place:         Name = TEXT("Placing"); break;
-	case EWorkerState::ReturnHome:    Name = TEXT("Returning"); break;
-	default:                          Name = TEXT("Idle"); break;
-	}
-	StateLabel->SetText(FText::FromString(Name));
 }
 
 bool AWorkerRobot::MoveToward(const FVector& Target, float DeltaSeconds)
@@ -362,13 +333,6 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 						if (AWorkerRobot* Self = WeakThis.Get())
 						{
 							Self->LastResult = Result;
-							if (Self->StateLabel)
-							{
-								Self->StateLabel->SetText(FText::FromString(
-									FString::Printf(TEXT("%s: %s"),
-										Result.bAccepted ? TEXT("PASS") : TEXT("REJECT"),
-										*Result.Reason)));
-							}
 							if (Self->AssignedStation)
 							{
 								Self->OnFinishedWorking.Broadcast(Self->AssignedStation->StationType);

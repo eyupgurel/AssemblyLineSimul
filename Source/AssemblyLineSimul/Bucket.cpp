@@ -1,12 +1,9 @@
 #include "Bucket.h"
-#include "Camera/PlayerCameraManager.h"
 #include "Components/StaticMeshComponent.h"
-#include "Components/TextRenderComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/Font.h"
 #include "Engine/StaticMesh.h"
-#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -23,8 +20,6 @@ namespace
 	constexpr int32 BallGridCols = 4;
 	constexpr float BallSpacing  = 45.f;
 	constexpr float BallScale    = 0.30f;
-	constexpr float LabelSize    = 35.f;
-	constexpr float LabelOffsetZ = 150.f;  // in ball-local space; world Z = LabelOffsetZ * BallScale
 
 	constexpr int32 BillboardTextureSize = 512;
 
@@ -51,8 +46,7 @@ namespace
 
 ABucket::ABucket()
 {
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickInterval = 0.1f;
+	PrimaryActorTick.bCanEverTick = false;
 
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	RootComponent = MeshComponent;
@@ -157,22 +151,6 @@ void ABucket::OnConstruction(const FTransform& Transform)
 	}
 }
 
-void ABucket::Tick(float /*DeltaSeconds*/)
-{
-	// Billboard each ball's text label to face the player camera.
-	APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0);
-	if (!Cam) return;
-	const FVector CamLoc = Cam->GetCameraLocation();
-	for (UTextRenderComponent* Label : NumberBallLabels)
-	{
-		if (!Label) continue;
-		FRotator LookAt = (CamLoc - Label->GetComponentLocation()).Rotation();
-		LookAt.Pitch = 0.f;
-		LookAt.Roll = 0.f;
-		LookAt.Yaw += 180.f;
-		Label->SetWorldRotation(LookAt);
-	}
-}
 
 FString ABucket::GetContentsString() const
 {
@@ -202,12 +180,7 @@ void ABucket::RefreshContents()
 	{
 		if (Ball) Ball->DestroyComponent();
 	}
-	for (UTextRenderComponent* Label : NumberBallLabels)
-	{
-		if (Label) Label->DestroyComponent();
-	}
 	NumberBalls.Reset();
-	NumberBallLabels.Reset();
 
 	const int32 N = Contents.Num();
 	// Hide the bucket entirely when empty so the audience never sees an unfilled crate.
@@ -286,23 +259,5 @@ void ABucket::RefreshContents()
 			}
 		}
 
-		// Skip the floating-number fallback when the billiard material is in place — the
-		// number is already painted onto the ball, no need for a duplicate label.
-		if (BilliardBallMaterial.IsNull())
-		{
-			const FName LabelName = *FString::Printf(TEXT("NumberBallLabel_%d"), i);
-			UTextRenderComponent* Label = NewObject<UTextRenderComponent>(this, LabelName);
-			Label->SetupAttachment(Ball);
-			// Undo the ball's local scale so text renders at world-cm units.
-			Label->SetRelativeScale3D(FVector(1.f / BallScale));
-			Label->SetRelativeLocation(FVector(0.f, 0.f, LabelOffsetZ));
-			Label->SetHorizontalAlignment(EHTA_Center);
-			Label->SetVerticalAlignment(EVRTA_TextCenter);
-			Label->SetWorldSize(LabelSize);
-			Label->SetTextRenderColor(FColor::Yellow);
-			Label->SetText(FText::FromString(FString::FromInt(Contents[i])));
-			Label->RegisterComponent();
-			NumberBallLabels.Add(Label);
-		}
 	}
 }

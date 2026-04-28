@@ -5,7 +5,6 @@
 
 #include "Bucket.h"
 #include "Components/StaticMeshComponent.h"
-#include "Components/TextRenderComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -78,7 +77,7 @@ void FBucketSpec::Define()
 
 	Describe("RefreshContents", [this]()
 	{
-		It("creates one number ball per Contents entry with the right text", [this]()
+		It("creates one number ball per Contents entry", [this]()
 		{
 			FScopedTestWorld TW(TEXT("BucketSpec_Refresh"));
 			ABucket* Bucket = SpawnBucket(TW.World);
@@ -88,13 +87,6 @@ void FBucketSpec::Define()
 			Bucket->RefreshContents();
 
 			TestEqual(TEXT("ball count"), Bucket->NumberBalls.Num(), 3);
-			TestEqual(TEXT("label count"), Bucket->NumberBallLabels.Num(), 3);
-			if (Bucket->NumberBallLabels.Num() == 3)
-			{
-				TestEqual(TEXT("label 0"), Bucket->NumberBallLabels[0]->Text.ToString(), FString(TEXT("3")));
-				TestEqual(TEXT("label 1"), Bucket->NumberBallLabels[1]->Text.ToString(), FString(TEXT("5")));
-				TestEqual(TEXT("label 2"), Bucket->NumberBallLabels[2]->Text.ToString(), FString(TEXT("7")));
-			}
 		});
 
 		It("clears the visualization when Contents is empty", [this]()
@@ -109,7 +101,6 @@ void FBucketSpec::Define()
 			Bucket->RefreshContents();
 
 			TestEqual(TEXT("no balls after empty refresh"), Bucket->NumberBalls.Num(), 0);
-			TestEqual(TEXT("no labels after empty refresh"), Bucket->NumberBallLabels.Num(), 0);
 		});
 
 		It("rebuilds without leaking when called twice", [this]()
@@ -124,7 +115,6 @@ void FBucketSpec::Define()
 			Bucket->RefreshContents();
 
 			TestEqual(TEXT("ball count matches latest Contents"), Bucket->NumberBalls.Num(), 2);
-			TestEqual(TEXT("label count matches latest Contents"), Bucket->NumberBallLabels.Num(), 2);
 		});
 	});
 

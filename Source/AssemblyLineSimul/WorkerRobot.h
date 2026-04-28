@@ -13,7 +13,6 @@ class USkeletalMeshComponent;
 class USkeletalMesh;
 class UStaticMeshComponent;
 class USceneComponent;
-class UTextRenderComponent;
 
 UENUM(BlueprintType)
 enum class EWorkerState : uint8
@@ -80,9 +79,6 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Robot")
 	TObjectPtr<USceneComponent> CarrySocket;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Robot")
-	TObjectPtr<UTextRenderComponent> StateLabel;
 
 	// Green point light that lights when this worker's agent is the active voice
 	// speaker (Story 19). Off by default; toggled by SetActive.
@@ -168,7 +164,6 @@ protected:
 	FWorkerTaskComplete TaskCompleteCb;
 
 	void EnterState(EWorkerState NewState);
-	void UpdateLabel();
 	bool MoveToward(const FVector& Target, float DeltaSeconds);
 	void AttachBucket();
 	void DetachBucketAt(USceneComponent* Slot);

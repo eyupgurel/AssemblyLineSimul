@@ -8,7 +8,6 @@
 #include "OpenAIAPISubsystem.h"
 #include "Station.h"
 #include "StationSubclasses.h"
-#include "StationTalkWidget.h"
 #include "VoiceSubsystem.h"
 #include "WorkerRobot.h"
 #include "Blueprint/UserWidget.h"
@@ -60,10 +59,6 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 		const FVector Loc = LineOrigin + FVector((float)i * StationSpacing, 0.f, 0.f);
 		AStation* Station = World->SpawnActor<AStation>(Specs[i], Loc, FRotator::ZeroRotator, Params);
 		if (!Station) continue;
-		if (StationTalkWidgetClass)
-		{
-			Station->TalkWidgetClass = StationTalkWidgetClass;
-		}
 		Director->RegisterStation(Station);
 
 		const FVector RobotLoc = Station->WorkerStandPoint
@@ -425,8 +420,8 @@ void AAssemblyLineGameMode::HandleActiveAgentChanged(EStationType Agent)
 	if (!Director) return;
 
 	// Story 19 — light up the WORKER for the active agent (green glow), not the
-	// station (which used to glow cyan). Speak the affirmation through the
-	// active agent's talk panel + macOS-say pipeline below.
+	// station (which used to glow cyan). The affirmation is spoken through the
+	// macOS-say pipeline below — there's no in-world panel anymore.
 	const TArray<EStationType> All = {
 		EStationType::Generator, EStationType::Filter, EStationType::Sorter, EStationType::Checker
 	};
@@ -437,7 +432,7 @@ void AAssemblyLineGameMode::HandleActiveAgentChanged(EStationType Agent)
 			Worker->SetActive(T == Agent);
 		}
 	}
-	if (AStation* Active = Director->GetStationOfType(Agent))
+	if (Director->GetStationOfType(Agent))
 	{
 		const TCHAR* FriendlyName = TEXT("Agent");
 		switch (Agent)
@@ -449,10 +444,8 @@ void AAssemblyLineGameMode::HandleActiveAgentChanged(EStationType Agent)
 		}
 		const FString Affirmation = FString::Printf(
 			TEXT("%s here, reading you loud and clear. Go ahead."), FriendlyName);
-		Active->SpeakStreaming(Affirmation);
 
-		// Also push through the macOS `say` pipeline so the audience HEARS the
-		// handshake — SpeakStreaming alone only updates the talk panel text.
+		// Push through the macOS `say` pipeline so the audience HEARS the handshake.
 		if (UGameInstance* GI = GetGameInstance())
 		{
 			if (UAgentChatSubsystem* Chat = GI->GetSubsystem<UAgentChatSubsystem>())

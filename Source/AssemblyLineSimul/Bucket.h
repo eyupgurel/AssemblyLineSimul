@@ -5,7 +5,6 @@
 #include "Bucket.generated.h"
 
 class UStaticMeshComponent;
-class UTextRenderComponent;
 class UMaterialInterface;
 class UFont;
 
@@ -33,9 +32,6 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Bucket")
 	TArray<TObjectPtr<UStaticMeshComponent>> NumberBalls;
 
-	UPROPERTY(VisibleAnywhere, Category = "Bucket")
-	TArray<TObjectPtr<UTextRenderComponent>> NumberBallLabels;
-
 	// When set, RefreshContents paints each ball with a render-target texture of its number
 	// applied via a dynamic material instance of this material. Expected parameters on the
 	// material: NumberTexture (Texture2D), BaseColor (Vector).
@@ -60,13 +56,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bucket")
 	FString GetContentsString() const;
 
-	// Rebuilds NumberBalls + NumberBallLabels to match Contents.
+	// Rebuilds NumberBalls to match Contents.
 	UFUNCTION(BlueprintCallable, Category = "Bucket")
 	void RefreshContents();
 
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
-	virtual void Tick(float DeltaSeconds) override;
 
 private:
 	// Cached at construction so RefreshContents can build balls without runtime asset lookup.

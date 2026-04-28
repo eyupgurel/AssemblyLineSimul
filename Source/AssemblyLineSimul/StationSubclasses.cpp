@@ -71,7 +71,6 @@ AGeneratorStation::AGeneratorStation()
 	StationType = EStationType::Generator;
 	DisplayName = TEXT("GENERATOR");
 	CurrentRule = TEXT("Generate 10 random integers in the range 1 to 100");
-	if (NameLabel) NameLabel->SetTextRenderColor(FColor::Green);
 }
 
 void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
@@ -86,7 +85,6 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 	UClaudeAPISubsystem* Claude = GetClaude(this);
 	if (!Claude)
 	{
-		SpeakStreaming(TEXT("LLM unreachable — generator has no rule engine to fall back on."));
 		FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM unreachable");
 		OnComplete.ExecuteIfBound(R);
 		return;
@@ -103,8 +101,6 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 		TEXT("{\"result\":[<integers>]}\n")
 		TEXT("Example: {\"result\":[3,17,42,7,91]}"),
 		*EffectiveRule);
-
-	SpeakStreaming(FString::Printf(TEXT("Generating per rule: %s"), *EffectiveRule));
 
 	TWeakObjectPtr<AGeneratorStation> WeakThis(this);
 	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
@@ -123,7 +119,6 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 			TArray<int32> Numbers;
 			if (!bSuccess || !ParseResultArray(Response, Numbers))
 			{
-				Self->SpeakStreaming(FString::Printf(TEXT("LLM failed: %s"), *Response));
 				FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM failed");
 				OnComplete.ExecuteIfBound(R);
 				return;
@@ -131,7 +126,6 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 
 			B->Contents = MoveTemp(Numbers);
 			B->RefreshContents();
-			Self->SpeakStreaming(FString::Printf(TEXT("Generated: %s"), *B->GetContentsString()));
 
 			// Hold so the cinematic (which just zoomed in on OnContentsRevealed) has time
 			// to show the freshly-filled bucket, matching the Working-state wait other
@@ -175,7 +169,6 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 	UClaudeAPISubsystem* Claude = GetClaude(this);
 	if (!Claude)
 	{
-		SpeakStreaming(TEXT("LLM unreachable — passing bucket through unchanged."));
 		FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM unreachable");
 		OnComplete.ExecuteIfBound(R);
 		return;
@@ -195,8 +188,6 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 		TEXT("{\"result\":[<integers>]}"),
 		*EffectiveRule, *Input);
 
-	SpeakStreaming(FString::Printf(TEXT("Filtering [%s] per rule: %s"), *Input, *EffectiveRule));
-
 	TWeakObjectPtr<AFilterStation> WeakThis(this);
 	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
 	Claude->SendMessage(Prompt,
@@ -214,7 +205,6 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 			TArray<int32> Numbers;
 			if (!bSuccess || !ParseResultArray(Response, Numbers))
 			{
-				Self->SpeakStreaming(FString::Printf(TEXT("LLM failed: %s"), *Response));
 				FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM failed");
 				OnComplete.ExecuteIfBound(R);
 				return;
@@ -222,7 +212,6 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 
 			B->Contents = MoveTemp(Numbers);
 			B->RefreshContents();
-			Self->SpeakStreaming(FString::Printf(TEXT("Kept: %s"), *B->GetContentsString()));
 
 			FStationProcessResult R; R.bAccepted = true;
 			OnComplete.ExecuteIfBound(R);
@@ -250,7 +239,6 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 	UClaudeAPISubsystem* Claude = GetClaude(this);
 	if (!Claude)
 	{
-		SpeakStreaming(TEXT("LLM unreachable — passing bucket through unchanged."));
 		FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM unreachable");
 		OnComplete.ExecuteIfBound(R);
 		return;
@@ -270,8 +258,6 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 		TEXT("{\"result\":[<integers>]}"),
 		*EffectiveRule, *Input);
 
-	SpeakStreaming(FString::Printf(TEXT("Sorting [%s] per rule: %s"), *Input, *EffectiveRule));
-
 	TWeakObjectPtr<ASorterStation> WeakThis(this);
 	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
 	Claude->SendMessage(Prompt,
@@ -289,7 +275,6 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 			TArray<int32> Numbers;
 			if (!bSuccess || !ParseResultArray(Response, Numbers))
 			{
-				Self->SpeakStreaming(FString::Printf(TEXT("LLM failed: %s"), *Response));
 				FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM failed");
 				OnComplete.ExecuteIfBound(R);
 				return;
@@ -297,7 +282,6 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 
 			B->Contents = MoveTemp(Numbers);
 			B->RefreshContents();
-			Self->SpeakStreaming(FString::Printf(TEXT("Sorted: %s"), *B->GetContentsString()));
 
 			FStationProcessResult R; R.bAccepted = true;
 			OnComplete.ExecuteIfBound(R);
@@ -314,7 +298,6 @@ ACheckerStation::ACheckerStation()
 	// mode by giving it an explicit rule via chat. While bUseDerivedRule is true,
 	// GetEffectiveRule composes Generator + Filter + Sorter rules at read time.
 	CurrentRule = TEXT("The bucket should contain only prime numbers in [1, 100], sorted strictly ascending.");
-	if (NameLabel) NameLabel->SetTextRenderColor(FColor::Magenta);
 }
 
 FString ACheckerStation::GetEffectiveRule() const
@@ -394,12 +377,9 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 		TEXT("indignant — the audience needs to understand exactly what went wrong."),
 		*EffectiveRule, *Numbers);
 
-	SpeakStreaming(FString::Printf(TEXT("Inspecting bucket: %s"), *Numbers));
-
 	if (!Claude)
 	{
 		FStationProcessResult R; R.bAccepted = true; R.Reason = TEXT("LLM unreachable, accepting by default");
-		SpeakStreaming(R.Reason);
 		OnComplete.ExecuteIfBound(R);
 		return;
 	}
@@ -422,8 +402,8 @@ void ACheckerStation::HandleVerdictReply(bool bSuccess, const FString& Response,
 	{
 		R.bAccepted = true;
 		R.Reason = TEXT("LLM unreachable, accepting by default");
-		// SpeakAloud (panel + TTS) so the audience hears the fallback even when
-		// Claude is down — Story 15 + the new "no silent verdicts" contract.
+		// SpeakAloud (TTS) so the audience hears the fallback even when Claude
+		// is down — Story 15 + the "no silent verdicts" contract.
 		SpeakAloud(FString::Printf(TEXT("LLM unreachable — %s"), *Response));
 		OnComplete.ExecuteIfBound(R);
 		return;
@@ -469,7 +449,7 @@ void ACheckerStation::HandleVerdictReply(bool bSuccess, const FString& Response,
 		R.SendBackTo = EStationType::Filter;
 	}
 
-	// SpeakAloud → talk panel + macOS `say`. The verdict path bypasses
+	// SpeakAloud → macOS `say`. The verdict path bypasses
 	// AgentChatSubsystem::HandleClaudeResponse, so without this the Checker
 	// would silently flash red while the audience waits for an explanation.
 	SpeakAloud(FString::Printf(TEXT("[%s] %s"),

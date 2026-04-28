@@ -85,35 +85,6 @@ void FAssemblyLineGameModeSpec::Define()
 			TestEqual(TEXT("Spawned 4 workers"), WorkerCount, 4);
 			TestEqual(TEXT("All workers have GameMode's mesh asset"), PropagatedCount, 4);
 		});
-
-		It("propagates StationTalkWidgetClass to every spawned station", [this]()
-		{
-			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_TalkWidgetPropagation"));
-
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
-				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			TestNotNull(TEXT("GameMode spawned"), GM);
-			if (!GM) return;
-
-			GM->StationTalkWidgetClass = UTestDerivedTalkWidget::StaticClass();
-			GM->SpawnAssemblyLine();
-
-			int32 StationCount = 0;
-			int32 PropagatedCount = 0;
-			for (TActorIterator<AStation> It(TW.World); It; ++It)
-			{
-				++StationCount;
-				if (It->TalkWidgetClass.Get() == GM->StationTalkWidgetClass.Get())
-				{
-					++PropagatedCount;
-				}
-			}
-
-			TestEqual(TEXT("Spawned 4 stations"), StationCount, 4);
-			TestEqual(TEXT("All stations adopted GameMode's TalkWidgetClass"), PropagatedCount, 4);
-		});
 	});
 
 	Describe("SpawnCinematicDirector", [this]()

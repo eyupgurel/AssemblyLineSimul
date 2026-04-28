@@ -7,7 +7,6 @@
 
 class UStaticMesh;
 class USkeletalMesh;
-class UStationTalkWidget;
 class UAgentChatWidget;
 class UInputAction;
 class UInputMappingContext;
@@ -36,10 +35,6 @@ public:
 	// Per-station tint applied to the worker's body material.
 	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
 	TMap<EStationType, FLinearColor> RobotTintByStation;
-
-	// UMG widget class assigned to every spawned station's TalkWidgetClass.
-	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
-	TSubclassOf<UStationTalkWidget> StationTalkWidgetClass;
 
 	// Bucket class propagated to the Director so newly-spawned buckets adopt e.g. a
 	// Blueprint subclass that has BilliardBallMaterial set.

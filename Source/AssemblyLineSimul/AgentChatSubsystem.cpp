@@ -163,21 +163,6 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 	TArray<FAgentChatMessage>& History = Histories.FindOrAdd(StationType);
 	History.Add({ TEXT("assistant"), PrefixedReply });
 
-	UWorld* W = GetWorld();
-	if (W)
-	{
-		if (UAssemblyLineDirector* Director = W->GetSubsystem<UAssemblyLineDirector>())
-		{
-			if (AWorkerRobot* Worker = Director->GetRobotForStation(StationType))
-			{
-				if (Worker->AssignedStation)
-				{
-					Worker->AssignedStation->SpeakStreaming(PrefixedReply);
-				}
-			}
-		}
-	}
-
 	if (bSpeakResponses)
 	{
 		SpeakResponse(PrefixedReply);
