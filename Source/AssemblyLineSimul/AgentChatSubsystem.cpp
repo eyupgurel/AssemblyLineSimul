@@ -1,4 +1,5 @@
 #include "AgentChatSubsystem.h"
+#include "AgentPromptLibrary.h"
 #include "AssemblyLineDirector.h"
 #include "Bucket.h"
 #include "ClaudeAPISubsystem.h"
@@ -77,20 +78,16 @@ FString UAgentChatSubsystem::BuildPromptForStation(EStationType StationType, con
 		}
 	}
 
-	return FString::Printf(
-		TEXT("You are the %s agent on an assembly line of AI workers. Your role: %s\n")
-		TEXT("Current rule (governs how you process buckets): %s\n")
-		TEXT("Current bucket contents: %s\n\n")
-		TEXT("Conversation so far:\n%s")
-		TEXT("User: %s\n\n")
-		TEXT("The user may either: (a) chat with you, or (b) instruct you to change your rule. ")
-		TEXT("If they tell you to change behavior (e.g. 'filter only odd numbers instead of primes'), ")
-		TEXT("treat that as a NEW RULE and adopt it.\n\n")
-		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
-		TEXT("{\"reply\":\"<1-2 short conversational sentences>\",\"new_rule\":\"<rewritten plain-English rule>\"|null}\n")
-		TEXT("Set 'new_rule' to the full rewritten rule when behavior changes; otherwise null. ")
-		TEXT("'reply' must be plain English with no JSON or jargon."),
-		*Name, *Role, *Rule, *Bucket, *HistoryBlock, *UserText);
+	return AgentPromptLibrary::FormatPrompt(
+		AgentPromptLibrary::LoadChatSection(TEXT("ChatPromptTemplate")),
+		{
+			{TEXT("agent"),   Name},
+			{TEXT("role"),    Role},
+			{TEXT("rule"),    Rule},
+			{TEXT("bucket"),  Bucket},
+			{TEXT("history"), HistoryBlock},
+			{TEXT("message"), UserText},
+		});
 }
 
 void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bSuccess, const FString& Response)
@@ -222,19 +219,7 @@ void UAgentChatSubsystem::StopSpeaking()
 
 FString UAgentChatSubsystem::GetRoleDescription(EStationType StationType) const
 {
-	switch (StationType)
-	{
-	case EStationType::Generator:
-		return TEXT("You generate a fresh bucket of integers at the start of each cycle, following whatever rule the user has given you.");
-	case EStationType::Filter:
-		return TEXT("You inspect each number in the input bucket and keep or remove items according to your rule.");
-	case EStationType::Sorter:
-		return TEXT("You receive a bucket from the Filter and reorder its items according to your rule (without adding or removing values).");
-	case EStationType::Checker:
-		return TEXT("You are the QA agent. You verify the bucket against your rule and either accept it or reject it; on reject you identify the prior station that likely caused the mistake.");
-	default:
-		return TEXT("Unknown role.");
-	}
+	return AgentPromptLibrary::LoadAgentSection(StationType, TEXT("Role"));
 }
 
 FString UAgentChatSubsystem::GetCurrentRule(EStationType StationType) const

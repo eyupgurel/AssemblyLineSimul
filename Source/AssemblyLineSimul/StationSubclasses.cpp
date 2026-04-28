@@ -1,4 +1,5 @@
 #include "StationSubclasses.h"
+#include "AgentPromptLibrary.h"
 #include "AssemblyLineDirector.h"
 #include "Bucket.h"
 #include "ClaudeAPISubsystem.h"
@@ -70,7 +71,8 @@ AGeneratorStation::AGeneratorStation()
 {
 	StationType = EStationType::Generator;
 	DisplayName = TEXT("GENERATOR");
-	CurrentRule = TEXT("Generate 10 random integers in the range 1 to 100");
+	CurrentRule = AgentPromptLibrary::LoadAgentSection(
+		EStationType::Generator, TEXT("DefaultRule"));
 }
 
 void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
@@ -93,14 +95,10 @@ void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete O
 	const FString EffectiveRule = GetEffectiveRule();
 	UE_LOG(LogStation, Display,
 		TEXT("[Generator] ProcessBucket using rule: \"%s\""), *EffectiveRule);
-	const FString Prompt = FString::Printf(
-		TEXT("You are the Generator agent on an assembly line. Apply this rule to produce a fresh ")
-		TEXT("bucket of integers:\n\n")
-		TEXT("RULE: %s\n\n")
-		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
-		TEXT("{\"result\":[<integers>]}\n")
-		TEXT("Example: {\"result\":[3,17,42,7,91]}"),
-		*EffectiveRule);
+	const FString Prompt = AgentPromptLibrary::FormatPrompt(
+		AgentPromptLibrary::LoadAgentSection(
+			EStationType::Generator, TEXT("ProcessBucketPrompt")),
+		{ {TEXT("rule"), EffectiveRule} });
 
 	TWeakObjectPtr<AGeneratorStation> WeakThis(this);
 	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
@@ -154,7 +152,8 @@ AFilterStation::AFilterStation()
 {
 	StationType = EStationType::Filter;
 	DisplayName = TEXT("FILTER");
-	CurrentRule = TEXT("Keep only the prime numbers; remove non-primes.");
+	CurrentRule = AgentPromptLibrary::LoadAgentSection(
+		EStationType::Filter, TEXT("DefaultRule"));
 }
 
 TArray<int32> AFilterStation::FindKeptIndices(
@@ -199,14 +198,10 @@ void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 	UE_LOG(LogStation, Display,
 		TEXT("[Filter] ProcessBucket using rule: \"%s\" — input: %s"),
 		*EffectiveRule, *Input);
-	const FString Prompt = FString::Printf(
-		TEXT("You are the Filter agent on an assembly line. Apply this rule to the input bucket ")
-		TEXT("and return the filtered bucket. Preserve the original order of the kept items.\n\n")
-		TEXT("RULE: %s\n")
-		TEXT("INPUT: [%s]\n\n")
-		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
-		TEXT("{\"result\":[<integers>]}"),
-		*EffectiveRule, *Input);
+	const FString Prompt = AgentPromptLibrary::FormatPrompt(
+		AgentPromptLibrary::LoadAgentSection(
+			EStationType::Filter, TEXT("ProcessBucketPrompt")),
+		{ {TEXT("rule"), EffectiveRule}, {TEXT("input"), Input} });
 
 	TWeakObjectPtr<AFilterStation> WeakThis(this);
 	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
@@ -269,7 +264,8 @@ ASorterStation::ASorterStation()
 {
 	StationType = EStationType::Sorter;
 	DisplayName = TEXT("SORTER");
-	CurrentRule = TEXT("Sort the numbers in strictly ascending order.");
+	CurrentRule = AgentPromptLibrary::LoadAgentSection(
+		EStationType::Sorter, TEXT("DefaultRule"));
 }
 
 void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
@@ -294,14 +290,10 @@ void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnCo
 	UE_LOG(LogStation, Display,
 		TEXT("[Sorter] ProcessBucket using rule: \"%s\" — input: %s"),
 		*EffectiveRule, *Input);
-	const FString Prompt = FString::Printf(
-		TEXT("You are the Sorter agent on an assembly line. Apply this rule to the input bucket ")
-		TEXT("and return the reordered bucket (do not add or remove values, only reorder).\n\n")
-		TEXT("RULE: %s\n")
-		TEXT("INPUT: [%s]\n\n")
-		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
-		TEXT("{\"result\":[<integers>]}"),
-		*EffectiveRule, *Input);
+	const FString Prompt = AgentPromptLibrary::FormatPrompt(
+		AgentPromptLibrary::LoadAgentSection(
+			EStationType::Sorter, TEXT("ProcessBucketPrompt")),
+		{ {TEXT("rule"), EffectiveRule}, {TEXT("input"), Input} });
 
 	TWeakObjectPtr<ASorterStation> WeakThis(this);
 	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
@@ -342,7 +334,8 @@ ACheckerStation::ACheckerStation()
 	// Default CurrentRule is only used if the user later switches Checker out of derived
 	// mode by giving it an explicit rule via chat. While bUseDerivedRule is true,
 	// GetEffectiveRule composes Generator + Filter + Sorter rules at read time.
-	CurrentRule = TEXT("The bucket should contain only prime numbers in [1, 100], sorted strictly ascending.");
+	CurrentRule = AgentPromptLibrary::LoadAgentSection(
+		EStationType::Checker, TEXT("DefaultRule"));
 }
 
 FString ACheckerStation::GetEffectiveRule() const
@@ -365,17 +358,14 @@ FString ACheckerStation::GetEffectiveRule() const
 		return S ? S->CurrentRule : FString(TEXT("(unknown)"));
 	};
 
-	return FString::Printf(
-		TEXT("The bucket has been processed by three upstream agents in this order:\n")
-		TEXT("  1. Generator produced items per: %s\n")
-		TEXT("  2. Filter then applied: %s\n")
-		TEXT("  3. Sorter then applied: %s\n")
-		TEXT("Verify the final bucket is consistent with the chain of rules. ")
-		TEXT("On reject: send back to 'Filter' if the wrong items are present, ")
-		TEXT("or 'Sorter' if items are in the wrong order."),
-		*RuleOf(EStationType::Generator),
-		*RuleOf(EStationType::Filter),
-		*RuleOf(EStationType::Sorter));
+	return AgentPromptLibrary::FormatPrompt(
+		AgentPromptLibrary::LoadAgentSection(
+			EStationType::Checker, TEXT("DerivedRuleTemplate")),
+		{
+			{TEXT("generator_rule"), RuleOf(EStationType::Generator)},
+			{TEXT("filter_rule"),    RuleOf(EStationType::Filter)},
+			{TEXT("sorter_rule"),    RuleOf(EStationType::Sorter)},
+		});
 }
 
 void ACheckerStation::OnRuleSetByChat()
@@ -403,24 +393,10 @@ void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnC
 	UE_LOG(LogStation, Display,
 		TEXT("[Checker] ProcessBucket using rule: \"%s\" — input: %s"),
 		*EffectiveRule, *Numbers);
-	const FString Prompt = FString::Printf(
-		TEXT("You are the QA / Checker agent on an assembly line. Verify the bucket against your rule.\n\n")
-		TEXT("RULE: %s\n")
-		TEXT("BUCKET: %s\n\n")
-		TEXT("Be conservative: ACCEPT unless you can name a SPECIFIC offending item ")
-		TEXT("(e.g. '9 is not prime') or a SPECIFIC out-of-order pair ")
-		TEXT("(e.g. '17 comes before 11'). Bucket size alone is not a reason to reject.\n\n")
-		TEXT("Respond with ONLY a JSON object on a single line, no markdown:\n")
-		TEXT("{\"verdict\":\"pass\"|\"reject\",\"reason\":\"...\",\"send_back_to\":\"Filter\"|\"Sorter\"|null}\n")
-		TEXT("On reject: send_back_to is 'Filter' for content errors, 'Sorter' for ordering errors. ")
-		TEXT("On pass: send_back_to MUST be null.\n")
-		TEXT("'reason':\n")
-		TEXT(" - On PASS: ONE short plain-English sentence under 100 characters confirming everything checks out.\n")
-		TEXT(" - On REJECT: a thorough complaint, 2-4 sentences (up to 350 characters). ")
-		TEXT("Name EVERY offending value (or pair), explain WHY each one breaks the rule, ")
-		TEXT("and call out which prior station was responsible. Be specific and a little ")
-		TEXT("indignant — the audience needs to understand exactly what went wrong."),
-		*EffectiveRule, *Numbers);
+	const FString Prompt = AgentPromptLibrary::FormatPrompt(
+		AgentPromptLibrary::LoadAgentSection(
+			EStationType::Checker, TEXT("ProcessBucketPrompt")),
+		{ {TEXT("rule"), EffectiveRule}, {TEXT("bucket"), Numbers} });
 
 	if (!Claude)
 	{
