@@ -86,7 +86,7 @@ Filter as a command (e.g. *"Only filter the odd numbers"*). Filter
 acknowledges via TTS and every subsequent bucket flows through the
 new rule. The Checker's derived rule auto-updates too, so it
 correctly catches buckets that made it through Filter on the *old*
-rule. Press **Tab** to open the chat HUD if you'd rather type.
+rule. Voice is the only input channel — there's no chat HUD.
 
 Pressing Space also **silences** any in-flight agent voice (Story
 26) — if the Checker is mid-verdict and you start speaking, the
@@ -126,7 +126,7 @@ macOS microphone permission prompt — click **Allow**.
 ```mermaid
 graph TB
   subgraph Player input
-    KB[Keyboard: Space hold-to-talk + Tab chat toggle]
+    KB[Keyboard: Space hold-to-talk]
     Mic[macOS microphone]
   end
 
@@ -375,9 +375,11 @@ spec under `Stories/`.
 - **[Story 24](Stories/Story_24_Filter_Selected_Glow.md)** — *Superseded by Story 25.* First attempt at gold-glow on filter survivors painted every post-filter ball gold, but by then the rejected balls had already been destroyed — no contrast.
 - **[Story 25](Stories/Story_25_Filter_Selection_Preview.md)** — Filter selection preview: when Claude returns the kept subset, the SELECTED balls glow emissive gold for one second while the REJECTED balls remain visible with their normal painted-number material — audience sees the contrast, then the rejected balls vanish and only survivors continue. New static helper `AFilterStation::FindKeptIndices` maps each kept value to its first-occurrence index in the input bucket (handles duplicates).
 
-### Phase 11 — Operator-experience polish (story 26)
+### Phase 11 — Operator-experience polish (stories 26–28)
 
 - **[Story 26](Stories/Story_26_Terse_Pass_And_Silence_Agents.md)** — Two pacing fixes for the live demo: (1) the Checker's PASS verdict drops the LLM-generated reason and just says **"Pass."** — the visible green flash already conveys success, so a one-sentence justification was slowing the cycle. REJECT keeps the verbose complaint. (2) Pushing **Space** to talk now silences any in-flight agent voice — `UAgentChatSubsystem::StopSpeaking` terminates every running `/usr/bin/say` subprocess so the operator isn't fighting an agent for the audio channel.
+- **[Story 27](Stories/Story_27_Externalize_Agent_Prompts.md)** — Every Claude-bound prompt template moves out of `.cpp` string literals into editable `.md` files under `Content/Agents/` (per-agent + a shared `ChatPrompt.md`). New `AgentPromptLibrary` namespace loads, caches, and substitutes `{{name}}` placeholders. Refactor only — prompts go out byte-identical, but future tweaks become one-file `.md` PRs and `Docs/Agent_Instructions.md` becomes a thin pointer instead of duplicating prompt text.
+- **[Story 28](Stories/Story_28_Remove_Tab_Chat_Widget.md)** — Strip the Tab-toggled `UAgentChatWidget` entirely (class files deleted, GameMode plumbing removed, Tab keybinding gone). Voice push-to-talk is now the only input channel. `UAgentChatSubsystem` itself stays (the voice path uses it).
 
 ## Testing
 
@@ -466,7 +468,6 @@ AssemblyLineSimul/
 │   ├── ClaudeAPISubsystem.{h,cpp}      ← Anthropic /v1/messages POST
 │   ├── OpenAIAPISubsystem.{h,cpp}      ← Whisper /v1/audio/transcriptions multipart POST
 │   ├── AgentChatSubsystem.{h,cpp}      ← per-agent chat, OnRuleUpdated, SpeakResponse (TTS)
-│   ├── AgentChatWidget.{h,cpp}         ← Tab-toggled HUD chat panel
 │   ├── VoiceSubsystem.{h,cpp}          ← active-agent state, transcript routing
 │   ├── VoiceHailParser.{h,cpp}         ← "hey <agent> do you read me" matcher (Levenshtein)
 │   ├── MacAudioCapture.{h,mm}          ← AVAudioRecorder Obj-C++ bridge (Mac-only)

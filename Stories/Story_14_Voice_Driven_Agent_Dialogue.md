@@ -4,7 +4,7 @@ Approved 2026-04-26.
 
 ## Goal
 
-Replace the Tab-toggled chat widget as the primary input channel. Talk to agents the way you'd talk to a person on a radio:
+Make voice push-to-talk the primary input channel for talking with agents. (Story 28 later removed the Tab-toggled chat widget entirely; voice is now the **only** channel.) Talk to agents the way you'd talk to a person on a radio:
 
 > "Hey Filter, do you read me?"
 > *(Filter highlights, replies via TTS: "Filter here, ready.")*

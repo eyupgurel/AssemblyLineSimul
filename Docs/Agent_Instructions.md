@@ -22,7 +22,7 @@ prompts. Neither sees the other's history.
 | Family | Trigger | Volume | History? | Schema |
 |---|---|---|---|---|
 | **Per-cycle `ProcessBucket`** | Worker enters Working state at a station's dock | 4 calls per cycle (one per station) | Stateless | `{"result": [...]}` or `{"verdict": ..., "reason": ..., "send_back_to": ...}` |
-| **Chat** | Operator hails an agent (Tab HUD or push-to-talk) | 1 call per operator message | Per-agent turn-by-turn history accumulated in payload | `{"reply": "...", "new_rule": "..." \| null}` |
+| **Chat** | Operator hails an agent via push-to-talk | 1 call per operator message | Per-agent turn-by-turn history accumulated in payload | `{"reply": "...", "new_rule": "..." \| null}` |
 
 **No system prompt.** Both families pack everything into the user
 message; the Anthropic `system:` field is never set. **No tool use.**

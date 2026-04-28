@@ -1,6 +1,5 @@
 #include "AssemblyLineGameMode.h"
 #include "AgentChatSubsystem.h"
-#include "AgentChatWidget.h"
 #include "AssemblyLineDirector.h"
 #include "AssemblyLineFeedback.h"
 #include "CinematicCameraDirector.h"
@@ -10,7 +9,6 @@
 #include "StationSubclasses.h"
 #include "VoiceSubsystem.h"
 #include "WorkerRobot.h"
-#include "Blueprint/UserWidget.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/StaticMesh.h"
@@ -220,70 +218,6 @@ void AAssemblyLineGameMode::SpawnFeedback()
 	}
 }
 
-void AAssemblyLineGameMode::SpawnChatWidget()
-{
-	UWorld* World = GetWorld();
-	if (!World) return;
-	APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
-	if (!PC) return;
-
-	ChatWidget = CreateWidget<UAgentChatWidget>(PC, UAgentChatWidget::StaticClass());
-	if (!ChatWidget) return;
-	ChatWidget->AddToViewport(100);
-	ChatWidget->SetVisibility(ESlateVisibility::Hidden);
-
-	// Programmatic Enhanced Input binding for Tab → ToggleChatWidget.
-	if (!ChatToggleAction)
-	{
-		ChatToggleAction = NewObject<UInputAction>(this, TEXT("ChatToggleAction"));
-		ChatToggleAction->ValueType = EInputActionValueType::Boolean;
-	}
-	if (!ChatToggleMappingContext)
-	{
-		ChatToggleMappingContext = NewObject<UInputMappingContext>(this, TEXT("ChatToggleMappingContext"));
-		ChatToggleMappingContext->MapKey(ChatToggleAction, EKeys::Tab);
-	}
-	if (ULocalPlayer* LP = PC->GetLocalPlayer())
-	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsys =
-				LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
-		{
-			Subsys->AddMappingContext(ChatToggleMappingContext, 1);
-		}
-	}
-	EnableInput(PC);
-	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
-	{
-		EIC->BindAction(ChatToggleAction, ETriggerEvent::Triggered,
-			this, &AAssemblyLineGameMode::ToggleChatWidget);
-	}
-}
-
-void AAssemblyLineGameMode::ToggleChatWidget()
-{
-	if (!ChatWidget) return;
-	const bool bWasVisible = ChatWidget->IsVisible();
-	ChatWidget->SetVisibility(bWasVisible ? ESlateVisibility::Hidden : ESlateVisibility::Visible);
-
-	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
-	{
-		if (!bWasVisible)
-		{
-			FInputModeGameAndUI Mode;
-			Mode.SetWidgetToFocus(ChatWidget->TakeWidget());
-			Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-			PC->SetInputMode(Mode);
-			PC->bShowMouseCursor = true;
-		}
-		else
-		{
-			FInputModeGameOnly Mode;
-			PC->SetInputMode(Mode);
-			PC->bShowMouseCursor = false;
-		}
-	}
-}
-
 void AAssemblyLineGameMode::SetupVoiceInput()
 {
 	UWorld* World = GetWorld();
@@ -482,7 +416,6 @@ void AAssemblyLineGameMode::BeginPlay()
 	SpawnFloor();
 	SpawnCinematicDirector();
 	SpawnFeedback();
-	SpawnChatWidget();
 	SetupVoiceInput();
 
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();

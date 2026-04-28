@@ -5,9 +5,11 @@ Drafted 2026-04-28.
 ## Goal
 
 Remove every piece of text rendered in the 3D world so the audience
-sees workers, buckets, and floor with nothing obscuring them. The
-2D HUD chat (Tab toggle) and operational on-screen debug messages
-stay — only **in-world floating labels and talk panels** are removed.
+sees workers, buckets, and floor with nothing obscuring them.
+Operational on-screen debug messages stay — only **in-world floating
+labels and talk panels** are removed. *(Story 23 originally also kept
+the 2D HUD chat (Tab toggle); Story 28 later removed that too. See
+the strikethroughs below.)*
 
 ## What's removed
 
@@ -36,8 +38,9 @@ stay — only **in-world floating labels and talk panels** are removed.
 
 ## What's kept
 
-- **`UAgentChatWidget`** (HUD chat input toggled with Tab) — interactive
-  input, not decorative text.
+- ~~**`UAgentChatWidget`** (HUD chat input toggled with Tab) — interactive
+  input, not decorative text.~~ *(Removed in Story 28 — voice push-to-talk
+  is now the only input channel.)*
 - **On-screen debug messages** ("● REC", "Transcribing…", transcripts) —
   operational signal.
 - **`Chat->SpeakResponse` / macOS-`say` TTS pipeline** — audible
@@ -96,8 +99,8 @@ stay — only **in-world floating labels and talk panels** are removed.
 
 ## Out of scope
 
-- Removing `UAgentChatWidget` (the Tab HUD) — that's interactive input,
-  not decorative text.
+- ~~Removing `UAgentChatWidget` (the Tab HUD) — that's interactive input,
+  not decorative text.~~ *(Done in Story 28.)*
 - Removing on-screen debug messages from voice pipeline — operational.
 - Removing painted-texture numbers from billiard balls — data viz.
 - Removing `AStation::DisplayName` — used by logs only.
