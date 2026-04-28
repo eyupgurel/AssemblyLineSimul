@@ -38,38 +38,54 @@ The project doubles as a worked example of:
 
 ## What you see when you press Play
 
-Four robot workers stand at four stations laid out along a line. Each
-station has:
+Four humanoid worker robots (UE5 Manny mannequin with idle / walk
+anim swap) stand at four invisible stations along a metallic
+industrial floor — the line itself is conveyed entirely visually,
+no labels or panels in the world. Buckets glow gold. The agents
+talk to you out loud.
 
-- a worktable with a glass / wireframe crate ("bucket") for numbered billiard balls
-- a 3D talk panel above the station that streams the agent's current dialogue
-- a coloured rim light that turns on when the agent is the **active speaker**
+Each station's footprint is just an empty dock above the floor.
+Buckets float there during processing; nothing else is visible
+above the floor at the station except the worker. A green point
+light lights up the worker whose agent is the **active voice
+speaker** (so when you say *"Hey Filter"*, the Filter worker
+literally glows green).
 
 When the cycle starts:
 
-1. The **Generator** robot fills the bucket with a fresh batch of integers
-   per its current rule (default: *"Generate 10 random integers in the
-   range 1 to 100"*).
-2. The **Filter** worker carries the bucket to its station and applies its
-   rule (default: *keep only primes*).
-3. The **Sorter** reorders the kept items (default: *strictly ascending*).
-4. The **Checker** verifies the bucket against the *composed* rule chain
-   ("Generator did X, Filter did Y, Sorter did Z — does this bucket fit?").
-   - **PASS** → green light flashes, the camera holds a victory close‑up on
-     the accepted bucket, then the next cycle spawns from the Generator.
-   - **REJECT** → red light flashes, the Checker complains aloud naming
-     every offending value and the responsible station, the rework worker
-     carries the bucket back, and the **camera chases the bucket** until
-     it docks at the rework station.
+1. The **Generator** robot's bucket fills with a fresh batch of
+   integers per the agent's current rule (default: *"Generate 10
+   random integers in the range 1 to 100"*). The bucket renders as
+   a glowing-gold wireframe crate (12 emissive cylinder edges) with
+   billiard-style numbered spheres inside.
+2. The **Filter** worker carries the bucket to its dock. Claude
+   returns the kept subset; the SELECTED balls glow emissive gold
+   for one second while the rejected balls stay with their normal
+   painted-number material — the audience sees exactly which were
+   chosen — then the rejected balls vanish and only the survivors
+   continue.
+3. The **Sorter** reorders the kept items (default: *strictly
+   ascending*).
+4. The **Checker** verifies the bucket against the *composed* rule
+   chain ("Generator did X, Filter did Y, Sorter did Z — does this
+   bucket fit?").
+   - **PASS** → green light flashes, the camera holds a victory
+     close-up on the accepted bucket, the Checker speaks the verdict
+     aloud, then the next cycle spawns from the Generator.
+   - **REJECT** → red light flashes, the Checker complains aloud
+     naming every offending value and the responsible station, the
+     rework worker carries the bucket back, and the **camera chases
+     the bucket** until it docks at the rework station.
 
 At any point you can press and hold **Space** to talk to a specific
-agent: *"Hey Filter, do you read me?"* → Filter glows, replies *"Filter
-here, reading you loud and clear. Go ahead."* → next push‑to‑talk gets
-routed to Filter as a command (e.g. *"Only filter the odd numbers"*).
-Filter replies via TTS, the rule visibly updates on its talk panel, and
-every subsequent bucket flows through the new rule. The Checker's
-derived rule auto‑updates too, so it correctly catches buckets that
-made it through Filter on the *old* rule.
+agent: *"Hey Filter, do you read me?"* → the Filter worker glows
+green, the Filter agent replies aloud *"Filter here, reading you
+loud and clear. Go ahead."* → next push-to-talk gets routed to
+Filter as a command (e.g. *"Only filter the odd numbers"*). Filter
+acknowledges via TTS and every subsequent bucket flows through the
+new rule. The Checker's derived rule auto-updates too, so it
+correctly catches buckets that made it through Filter on the *old*
+rule. Press **Tab** to open the chat HUD if you'd rather type.
 
 ## Quick start
 
@@ -154,18 +170,19 @@ graph TB
 
   Stations -- ProcessBucket --> Claude
   Claude -- LLM-driven result --> Stations
-  Stations -- SpeakAloud --> Chat
+  Stations -- SpeakAloud verdict TTS --> Chat
 
   GM -- spawns --> Stations
   GM -- spawns --> Workers
   GM -- spawns --> Cinematic
   GM -- spawns --> Feedback
+  GM -- spawns --> Floor[60x60 metal floor tiles]
   Dir -- dispatches --> Workers
   Workers -- carry --> Buckets
   Cinematic -- subscribes --> Dir
   Feedback -- subscribes --> Dir
   Voice -- OnActiveAgentChanged --> GM
-  GM -- SetActive (glow) --> Stations
+  GM -- SetActive green glow --> Workers
 ```
 
 ### Per‑cycle pipeline
@@ -174,7 +191,7 @@ graph TB
 flowchart LR
   Start([StartCycle]) --> Spawn[Spawn empty bucket]
   Spawn --> G[Generator robot:<br/>walks → ProcessBucket via Claude<br/>fills bucket per CurrentRule]
-  G --> F[Filter robot:<br/>walks → ProcessBucket via Claude<br/>filters per CurrentRule]
+  G --> F[Filter robot:<br/>walks → ProcessBucket via Claude<br/>kept balls glow gold for 1 s,<br/>then rejected balls vanish]
   F --> S[Sorter robot:<br/>walks → ProcessBucket via Claude<br/>sorts per CurrentRule]
   S --> C[Checker robot:<br/>walks → ProcessBucket via Claude<br/>verifies vs composed rule]
   C -->|PASS| Pass[Green flash<br/>chase camera = victory beat<br/>destroy bucket after delay]
@@ -223,16 +240,14 @@ sequenceDiagram
     Hail-->>V: matched StationType, fuzzy match
     V->>V: SetActiveAgent
     V->>GM: OnActiveAgentChanged
-    GM->>St: SetActive true cyan glow
-    GM->>St: SpeakStreaming Agent here reading you loud and clear
-    GM->>Chat: SpeakResponse same text
+    GM->>St: SetActive true (worker glows green)
+    GM->>Chat: SpeakResponse Agent here reading you loud and clear
     Chat->>Say: forks usr/bin/say with tempfile
   else any other transcript
     V->>Chat: SendMessage activeAgent transcript
     Chat->>CA: SendMessage with role rule history
     CA->>CA: HTTP POST v1/messages
     CA-->>Chat: reply JSON contains reply and new_rule
-    Chat->>St: SpeakStreaming prefixed reply
     Chat->>Say: SpeakResponse prefixed reply
     opt new_rule present
       Chat->>St: CurrentRule equals new_rule, OnRuleSetByChat
@@ -261,8 +276,8 @@ sequenceDiagram
   Note right of Ck: Checker bUseDerivedRule defaults true so GetEffectiveRule recomposes upstream rules at read time and Checker auto-sees the new Filter rule
   Chat->>Chat: OnRuleUpdated Broadcast Filter NewRule
   Chat->>Chat: UE_LOG Display Filter CurrentRule updated
-  Chat->>St: SpeakAloud Filter here plus reply
-  Chat->>St: SpeakAloud Rule updated message
+  Chat->>Chat: SpeakResponse Filter here plus reply
+  Chat->>Chat: SpeakResponse Rule updated message
 
   Note over St: Next bucket through Filter ProcessBucket builds prompt with the new EffectiveRule and logs ProcessBucket using rule
 ```
@@ -341,6 +356,20 @@ spec under `Stories/`.
 - **[Story 16](Stories/Story_16_Camera_Follows_Rejected_Bucket.md)** — Cinematic chase camera. On REJECT the camera follows the bucket back to the rework station; on PASS the camera holds a "victory beat" close‑up on the accepted bucket until it vanishes. Chase ends when the rework station's worker enters Working (or the bucket is destroyed).
 - **[Story 17](Stories/Story_17_Robust_Rework_Flow.md)** — Mid‑flight rule changes don't cancel the in‑flight bucket; the failure case (bucket leaves Filter on old rule, Checker catches it, bounces back, Filter re‑runs with new rule) is the demo. Empty bucket after rework triggers a visible recycle (`OnCycleRecycled`) and a fresh Generator cycle. `OnRuleUpdated` broadcast + `Display`‑level rule trace in every `ProcessBucket` make stale‑rule bugs impossible to miss.
 
+### Phase 9 — Worker / scene polish (stories 18–20)
+
+- **[Story 18](Stories/Story_18_Worker_Visual_Polish.md)** — Workers swap their primitive mech body for the UE5 Manny mannequin (`AnimSequence` idle / walk swap, 1.5× actor scale).
+- **[Story 19](Stories/Story_19_Active_Agent_Worker_Glow.md)** — Active-speaker green point light moves from the station to the worker — the talking agent's robot literally glows green next to its dock.
+- **[Story 20](Stories/Story_20_Industrial_Floor.md)** — Stylized metallic-floor asset pack tiled 60×60 under the line so the void disappears and every cinematic shot has ground beneath it.
+
+### Phase 10 — Visual cleanup pivot (stories 21–25)
+
+- **Story 21** — *Abandoned.* Imported a Fab "Free Fantasy Work Table" prop to replace the placeholder station bodies; the FBX's intrinsic pivot offset combined with the `BilliardBallMaterial` wiring made the placement and bucket-dock chain too fragile. Reverted.
+- **[Story 22](Stories/Story_22_Cleanup_After_Gold_Bucket.md)** — Cleanup pass after the gold-bucket pivot: dropped the orphaned `ABucket::GlassMaterial` property, removed the dead cube-mesh assignments on hidden `MeshComponent`/`WorkTable` in `AStation`.
+- **[Story 23](Stories/Story_23_Strip_InWorld_Text.md)** — Stripped every in-world text label (station name labels, in-world UMG talk panels, worker state labels, per-ball number labels). The whole `UStationTalkWidget` class + WBP asset deleted. TTS audio (Checker verdicts, hail handshake) is preserved — only the visual panel-write paths went.
+- **[Story 24](Stories/Story_24_Filter_Selected_Glow.md)** — *Superseded by Story 25.* First attempt at gold-glow on filter survivors painted every post-filter ball gold, but by then the rejected balls had already been destroyed — no contrast.
+- **[Story 25](Stories/Story_25_Filter_Selection_Preview.md)** — Filter selection preview: when Claude returns the kept subset, the SELECTED balls glow emissive gold for one second while the REJECTED balls remain visible with their normal painted-number material — audience sees the contrast, then the rejected balls vanish and only survivors continue. New static helper `AFilterStation::FindKeptIndices` maps each kept value to its first-occurrence index in the input bucket (handles duplicates).
+
 ## Testing
 
 The project uses **UE Automation Specs** (BDD‑style `Describe` / `It`)
@@ -357,20 +386,22 @@ plus one **FunctionalTest** actor for end‑to‑end coverage.
 
 Then `grep -c 'Result={Success}' /tmp/auto.log` for a count.
 
-**Current coverage: 59 specs across 11 files** (every spec passes against
-real Anthropic + OpenAI APIs when keys are configured; specs that don't
-need network use synthesised LLM responses fed through public test seams).
+**Current coverage: 69 specs across 12 spec files plus the FunctionalTest**
+(every spec passes against real Anthropic + OpenAI APIs when keys are
+configured; specs that don't need network use synthesised LLM responses
+fed through public test seams).
 
 | Spec file | What it locks down |
 | --- | --- |
 | `AgentChatSubsystemSpec` | Per‑agent history isolation, prompt construction, `SpeakResponse` test hook (`LastSpokenForTesting`), `OnRuleUpdated` broadcast on chat‑driven rule change. |
 | `AssemblyLineDirectorSpec` | Worker phase events re‑broadcast as `OnStationActive`, empty‑bucket‑recycle path (`OnCycleRecycled` fires; non‑empty buckets forward as normal). |
 | `AssemblyLineFeedbackSpec` | Accept/reject light spawning at the bucket location. |
-| `AssemblyLineGameModeSpec` | `SpawnAssemblyLine` propagates `WorkerRobotMeshAsset`/`StationTalkWidgetClass`/`BucketClass` correctly. |
-| `BucketSpec` | Crate construction, `RefreshContents` add/remove cycle, billiard material wiring. |
+| `AssemblyLineGameModeSpec` | `SpawnAssemblyLine` propagates `WorkerRobotMeshAsset` / `BucketClass` to spawned actors; `SpawnFloor` (Story 20) tiles `FloorTilesX × FloorTilesY` instances when `FloorMesh` is assigned and is a no-op when unset; cinematic spawns once with shots configured. |
+| `BucketSpec` | Crate construction (12 emissive wireframe edges, inner cube hidden), `RefreshContents` add/remove cycle, billiard material MID wiring, **`HighlightBallsAtIndices` (Story 25) only paints the named indices with `EmissiveMeshMaterial`** — others untouched, empty indices is a no-op. |
 | `CinematicCameraDirectorSpec` | Shot looping/holding, reactive station jumps, return‑to‑resume on idle, **chase enters/exits on cycle events, target updates on second rejection, PASS chase + null‑bucket fallback**. |
 | `OpenAIAPISubsystemSpec` | Whisper multipart body shape: `language=en` pinned, `model=whisper-1`, file part with filename + MIME, raw audio bytes embedded verbatim. |
-| `StationSpec` | Talk widget hosted/instantiated via `TalkWidgetClass`, `SpeakAloud` routes through chat subsystem TTS, **Checker PASS/REJECT/LLM‑unreachable verdicts all reach `LastSpokenForTesting`**. |
+| `StationSpec` | `SpeakAloud` routes through chat subsystem TTS (`Chat->LastSpokenForTesting`); Checker PASS/REJECT/LLM-unreachable verdicts all reach the macOS-`say` pipeline. |
+| `StationSubclassesSpec` | **`AFilterStation::FindKeptIndices` (Story 25)** — input/kept index mapping with first-occurrence claiming for duplicates; empty-input and empty-kept edge cases. |
 | `VoiceHailParserSpec` | Canonical hail pattern, case insensitivity, alternative confirmation phrases ("do you copy", "are you there"), rejection of non‑hails, fuzzy match (Levenshtein ≤ 2) for Whisper letter swaps ("filtre"/"soter"). |
 | `VoiceSubsystemSpec` | Initial state, hail switches active agent, sticky‑context command routing, second hail switches agent. |
 | `WorkerRobotSpec` | FSM phase events, body‑mesh assignment, tint MIDs, sync vs deferred completion. |
@@ -390,28 +421,38 @@ AssemblyLineSimul/
 ├── README.md                 ← you are here
 ├── AssemblyLineSimul.uproject
 ├── Build/
-│   └── Secrets/              ← gitignored API keys; auto-staged into packaged builds
-│       ├── AnthropicAPIKey.txt
-│       └── OpenAIAPIKey.txt
+│   └── Mac/
+│       ├── Resources/        ← engine-generated entitlements + plist template
+│       └── Scripts/
+│           └── fix_voice_in_packaged_app.sh  ← post-stage Info.plist + codesign fix
 ├── Config/
-│   ├── DefaultEngine.ini     ← GlobalDefaultGameMode = BP_AssemblyLineGameMode
+│   ├── DefaultEngine.ini     ← GlobalDefaultGameMode = BP_AssemblyLineGameMode + (best-effort)
+│   │                           ExtraPlistData NSMicrophoneUsageDescription
 │   └── DefaultGame.ini       ← +DirectoriesToAlwaysStageAsNonUFS=(Path="Secrets")
 ├── Content/
 │   ├── BP_AssemblyLineGameMode.uasset
 │   ├── BP_BilliardBucket.uasset
 │   ├── L_AssemblyDemo.umap
 │   ├── M_BilliardBall.uasset
-│   └── WBP_StationTalkPanel_Holo.uasset
+│   ├── Metallic_Floor/       ← Stylized Metallic Floor asset pack (Story 20)
+│   │   ├── StaticMesh/SM_Metallic_Floor.uasset
+│   │   ├── Material/M_Metallic_Floor.uasset
+│   │   └── Textures/         ← BC, N, M, R, AO, H maps
+│   └── Secrets/              ← gitignored API keys; auto-staged into packaged builds
+│       ├── AnthropicAPIKey.txt
+│       └── OpenAIAPIKey.txt
 ├── Source/AssemblyLineSimul/
-│   ├── AssemblyLineGameMode.{h,cpp}    ← spawns line + cinematic + feedback + chat + voice
+│   ├── AssemblyLineGameMode.{h,cpp}    ← spawns line + floor + cinematic + feedback + chat + voice
 │   ├── AssemblyLineDirector.{h,cpp}    ← cycle FSM, dispatch, recycle
 │   ├── AssemblyLineTypes.h             ← EStationType, FStationProcessResult, FAgentChatMessage
 │   │
-│   ├── Station.{h,cpp}                 ← base station: talk panel, ActiveLight, Speak/SpeakAloud
+│   ├── Station.{h,cpp}                 ← base station: ActiveLight (cyan), SpeakAloud (TTS-only)
 │   ├── StationSubclasses.{h,cpp}       ← Generator, Filter, Sorter, Checker (all LLM-driven)
-│   ├── StationTalkWidget.{h,cpp}       ← UMG body widget; optionally a Blueprint subclass
+│   │                                     Filter has FindKeptIndices for the selection preview
 │   ├── WorkerRobot.{h,cpp}             ← FSM: MoveToInput → PickUp → MoveToWorkPos → Working → MoveToOutput → Place → ReturnHome
-│   ├── Bucket.{h,cpp}                  ← wireframe crate + billiard balls + optional glass material
+│   │                                     UE5 Manny mannequin + idle/walk anim swap + green ActiveLight
+│   ├── Bucket.{h,cpp}                  ← 12 emissive-gold wireframe edges + billiard balls
+│   │                                     HighlightBallsAtIndices paints the Filter selection
 │   │
 │   ├── ClaudeAPISubsystem.{h,cpp}      ← Anthropic /v1/messages POST
 │   ├── OpenAIAPISubsystem.{h,cpp}      ← Whisper /v1/audio/transcriptions multipart POST
@@ -426,7 +467,7 @@ AssemblyLineSimul/
 │   ├── JsonHelpers.h                   ← shared ExtractJsonObject for chatty LLM replies
 │   │
 │   └── Tests/                          ← all *Spec.cpp + the FunctionalTest actor
-└── Stories/                            ← markdown specs for stories 14–17
+└── Stories/                            ← markdown specs for stories 14–25 (21 abandoned)
 ```
 
 ## External services & keys
@@ -460,16 +501,53 @@ Default GameMode is `BP_AssemblyLineGameMode` (set in
 `Config/DefaultEngine.ini` so packaged builds use it; without this
 fix the package would launch with the empty ThirdPerson template).
 
+### Post-stage fix-up: voice recognition (mandatory after every package)
+
+`Config/DefaultEngine.ini` contains
+`+ExtraPlistData=<key>NSMicrophoneUsageDescription</key>...` so the
+mic-usage string *should* land in the packaged `Info.plist`
+automatically — but UAT silently drops it in UE 5.7 (this worked
+in earlier 5.x). Without that key macOS denies mic access without
+ever prompting; AVAudioRecorder records 3 s of silence; Whisper
+transcribes silence as `"you"`. So every packaged build needs a
+post-stage patch.
+
+After every `RunUAT BuildCookRun` Mac package (or
+*Platforms → Mac → Package Project*), run:
+
+```bash
+./Build/Mac/Scripts/fix_voice_in_packaged_app.sh
+```
+
+What it does:
+
+1. Adds `NSMicrophoneUsageDescription` to the staged
+   `<App>.app/Contents/Info.plist`.
+2. Re-signs the bundle ad-hoc (the plist edit invalidates the
+   existing code signature; macOS would otherwise refuse to launch
+   it with an "invalid Info.plist (plist or signature have been
+   modified)" error).
+
+Optional flag `--reset-permission` also resets macOS's mic
+permission cache for the bundle id (`tccutil reset Microphone …`),
+forcing the OS to re-prompt on next launch — useful only if you
+changed the bundle id or want a clean grant.
+
+Once the script runs, launch the .app and grant mic permission
+when prompted (or check **System Settings → Privacy & Security →
+Microphone** is toggled ON for the app). Voice should work.
+
 ## Known limitations / future work
 
-- **Visuals**: workers and stations are placeholder primitives — a free
-  industrial environment pack from Fab + a humanoid robot mesh slotted
-  into `GameMode.WorkerRobotMeshAsset` would transform the look in
-  ~30 minutes of asset placement.
 - **macOS only**: `UMacAudioCapture` is the only voice‑capture
   backend; voice flow degrades gracefully (silently no‑ops) on other
   platforms. A Windows backend would be a small Win32 wrapper around
   `IAudioCaptureClient`.
+- **Packaged-build mic permission needs the post-stage script** —
+  see [Post-stage fix-up](#post-stage-fix-up-voice-recognition-mandatory-after-every-package).
+  Root cause is UAT silently dropping `+ExtraPlistData` in UE 5.7;
+  worth re-checking on each engine update to see if the upstream
+  fix lands.
 - **TTS race**: `SpeakResponse` writes to a single
   `agent_say_buffer.txt` file and forks `say -f`. Concurrent speakers
   (e.g. rapid hail + chat reply + Checker verdict) can clobber each
@@ -480,3 +558,6 @@ fix the package would launch with the empty ThirdPerson template).
   rejecting. By design (the demo wants to show the agents trying
   again), but in production you'd want a hard limit + a manual abort
   signal.
+- **Filter selection preview only** — Sorter and Checker don't have
+  an analogous "what changed?" highlight. The Sorter could flash
+  reorder arrows, the Checker could outline rule-violators in red.
