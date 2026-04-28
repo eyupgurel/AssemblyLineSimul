@@ -121,6 +121,16 @@ void UOpenAIAPISubsystem::TranscribeAudio(const TArray<uint8>& AudioBytes,
 	Req->SetTimeout(30.f);
 	Req->SetContent(Body);
 
+	// Story 30 — log a one-line outbound summary (raw audio bytes are too
+	// large to dump and would dwarf every other log line). Companion ← log
+	// fires on success below.
+	UE_LOG(LogOpenAI, Display,
+		TEXT("→ Whisper request: %d bytes, MIME=%s, file=%s, model=%s, lang=en"),
+		AudioBytes.Num(),
+		MimeType.IsEmpty() ? TEXT("audio/wav") : *MimeType,
+		FilenameHint.IsEmpty() ? TEXT("audio.wav") : *FilenameHint,
+		*Model);
+
 	Req->OnProcessRequestComplete().BindLambda(
 		[OnComplete](FHttpRequestPtr, FHttpResponsePtr Response, bool bOk)
 		{
@@ -138,6 +148,9 @@ void UOpenAIAPISubsystem::TranscribeAudio(const TArray<uint8>& AudioBytes,
 				OnComplete.ExecuteIfBound(false, BodyStr);
 				return;
 			}
+			// Story 30 — companion to the → summary above. Whisper responses are
+			// small JSON ({"text":"…"}), safe to log in full.
+			UE_LOG(LogOpenAI, Display, TEXT("← %s"), *BodyStr);
 
 			TSharedPtr<FJsonObject> Root;
 			const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(BodyStr);
