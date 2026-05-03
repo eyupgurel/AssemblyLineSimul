@@ -87,6 +87,36 @@ void FAgentPromptLibrarySpec::Define()
 		});
 	});
 
+	Describe("Orchestrator Mission section (Story 33a)", [this]()
+	{
+		It("exposes a Mission section with non-empty plain-English content", [this]()
+		{
+			const FString Mission = AgentPromptLibrary::LoadAgentSection(
+				EStationType::Orchestrator, TEXT("Mission"));
+			TestFalse(TEXT("Mission section is non-empty"), Mission.IsEmpty());
+			TestFalse(TEXT("Mission is plain English (no JSON braces)"),
+				Mission.Contains(TEXT("{")));
+			TestFalse(TEXT("Mission is operator-voice (no Claude-instruction leakage)"),
+				Mission.Contains(TEXT("You are")) || Mission.Contains(TEXT("you are")));
+		});
+
+		It("default Mission describes the canonical 4-station pipeline", [this]()
+		{
+			const FString Mission = AgentPromptLibrary::LoadAgentSection(
+				EStationType::Orchestrator, TEXT("Mission"));
+			TestTrue(TEXT("mentions generating numbers"),
+				Mission.Contains(TEXT("Generate"), ESearchCase::IgnoreCase) ||
+				Mission.Contains(TEXT("integers"), ESearchCase::IgnoreCase));
+			TestTrue(TEXT("mentions filtering primes"),
+				Mission.Contains(TEXT("filter"), ESearchCase::IgnoreCase) &&
+				Mission.Contains(TEXT("prime"), ESearchCase::IgnoreCase));
+			TestTrue(TEXT("mentions sorting"),
+				Mission.Contains(TEXT("sort"), ESearchCase::IgnoreCase));
+			TestTrue(TEXT("mentions checking"),
+				Mission.Contains(TEXT("check"), ESearchCase::IgnoreCase));
+		});
+	});
+
 	Describe("Checker DerivedRuleTemplate", [this]()
 	{
 		It("renders the upstream-rule composition when given the three rule placeholders", [this]()

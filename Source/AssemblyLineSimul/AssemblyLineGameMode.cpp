@@ -1,5 +1,6 @@
 #include "AssemblyLineGameMode.h"
 #include "AgentChatSubsystem.h"
+#include "AgentPromptLibrary.h"
 #include "AssemblyLineDirector.h"
 #include "AssemblyLineFeedback.h"
 #include "CinematicCameraDirector.h"
@@ -27,6 +28,37 @@ AAssemblyLineGameMode::AAssemblyLineGameMode()
 {
 	// Default game mode pawn/controller is fine; demo robots are spawned separately
 	// and are not possessed by the player.
+}
+
+void AAssemblyLineGameMode::SendDefaultMission()
+{
+	const FString Mission = AgentPromptLibrary::LoadAgentSection(
+		EStationType::Orchestrator, TEXT("Mission"));
+	if (Mission.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("SendDefaultMission: Orchestrator.md has no Mission section (or it's empty)."));
+		return;
+	}
+
+	UAgentChatSubsystem* Chat = ChatOverride;
+	if (!Chat)
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			Chat = GI->GetSubsystem<UAgentChatSubsystem>();
+		}
+	}
+	if (!Chat)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("SendDefaultMission: chat subsystem unavailable; mission dropped."));
+		return;
+	}
+
+	UE_LOG(LogTemp, Display,
+		TEXT("SendDefaultMission: routing mission to Orchestrator: \"%s\""), *Mission);
+	Chat->SendMessage(EStationType::Orchestrator, Mission);
 }
 
 void AAssemblyLineGameMode::SpawnOrchestrator()
@@ -348,10 +380,18 @@ void AAssemblyLineGameMode::SetupVoiceInput()
 		VoiceTalkAction = NewObject<UInputAction>(this, TEXT("VoiceTalkAction"));
 		VoiceTalkAction->ValueType = EInputActionValueType::Boolean;
 	}
+	// Story 33a — Enter-key fires SendDefaultMission. Shares the same
+	// mapping context as Space (one context, two actions).
+	if (!MissionAction)
+	{
+		MissionAction = NewObject<UInputAction>(this, TEXT("MissionAction"));
+		MissionAction->ValueType = EInputActionValueType::Boolean;
+	}
 	if (!VoiceMappingContext)
 	{
 		VoiceMappingContext = NewObject<UInputMappingContext>(this, TEXT("VoiceMappingContext"));
 		VoiceMappingContext->MapKey(VoiceTalkAction, EKeys::SpaceBar);
+		VoiceMappingContext->MapKey(MissionAction,   EKeys::Enter);
 	}
 	if (ULocalPlayer* LP = PC->GetLocalPlayer())
 	{
@@ -368,6 +408,8 @@ void AAssemblyLineGameMode::SetupVoiceInput()
 			this, &AAssemblyLineGameMode::OnVoiceTalkStarted);
 		EIC->BindAction(VoiceTalkAction, ETriggerEvent::Completed,
 			this, &AAssemblyLineGameMode::OnVoiceTalkCompleted);
+		EIC->BindAction(MissionAction, ETriggerEvent::Started,
+			this, &AAssemblyLineGameMode::SendDefaultMission);
 	}
 
 	// Subscribe to active-agent changes so we can light up the right station and
@@ -553,6 +595,17 @@ void AAssemblyLineGameMode::BeginPlay()
 			DAGProposedHandle = Chat->OnDAGProposed.AddUObject(
 				this, &AAssemblyLineGameMode::HandleDAGProposed);
 		}
+	}
+
+	// Story 33a — hands-free demo path. When bAutoMissionAtBoot is on,
+	// fire the default mission ~2 s after BeginPlay so the GI subsystems
+	// are wired and the operator doesn't need to press Enter.
+	if (bAutoMissionAtBoot)
+	{
+		FTimerHandle Th;
+		World->GetTimerManager().SetTimer(Th,
+			FTimerDelegate::CreateUObject(this, &AAssemblyLineGameMode::SendDefaultMission),
+			2.0f, false);
 	}
 }
 

@@ -3,10 +3,13 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "AgentChatSubsystem.h"
 #include "AssemblyLineDirector.h"
 #include "AssemblyLineGameMode.h"
+#include "AssemblyLineTypes.h"
 #include "CinematicCameraDirector.h"
 #include "DAG/AssemblyLineDAG.h"
+#include "Engine/GameInstance.h"
 #include "Station.h"
 #include "StationSubclasses.h"
 #include "TestStations.h"
@@ -398,6 +401,61 @@ void FAssemblyLineGameModeSpec::Define()
 				TestTrue(TEXT("tile mesh is the assigned FloorMesh"),
 					Smc->GetStaticMesh() == TestMesh);
 			}
+		});
+	});
+
+	Describe("SendDefaultMission (Story 33a — file-driven kickoff)", [this]()
+	{
+		It("reads the Mission section and pushes it through the chat subsystem "
+		   "as a user message addressed to the Orchestrator", [this]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_SendDefaultMission"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			TestNotNull(TEXT("GameMode spawned"), GM);
+			if (!GM) return;
+
+			// Tests run without a real UGameInstance subsystem collection, so
+			// inject a transient chat subsystem and assert against its history.
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Chat = NewObject<UAgentChatSubsystem>(GI);
+			GM->SetChatSubsystemForTesting(Chat);
+
+			GM->SendDefaultMission();
+
+			const TArray<FAgentChatMessage>& Hist = Chat->GetHistory(EStationType::Orchestrator);
+			TestTrue(TEXT("Orchestrator history has the Mission as a user message"),
+				Hist.ContainsByPredicate([](const FAgentChatMessage& M)
+				{
+					return M.Role == TEXT("user") && !M.Text.IsEmpty()
+						&& M.Text.Contains(TEXT("filter"), ESearchCase::IgnoreCase)
+						&& M.Text.Contains(TEXT("prime"), ESearchCase::IgnoreCase);
+				}));
+
+			// No other agent should have received the message.
+			TestEqual(TEXT("Filter history untouched"),
+				Chat->GetHistory(EStationType::Filter).Num(), 0);
+		});
+
+		It("is a no-op when the chat subsystem is unavailable (logs Warning, no crash)", [this]()
+		{
+			AddExpectedError(TEXT("chat subsystem"),
+				EAutomationExpectedErrorFlags::Contains, /*ExpectedNumOccurrences=*/1);
+
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_SendDefaultMission_NoChat"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			// No chat injected; no GameInstance subsystem available either.
+			GM->SendDefaultMission();
+			// Assertion is the AddExpectedError above + no crash.
 		});
 	});
 

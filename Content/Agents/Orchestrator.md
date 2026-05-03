@@ -15,3 +15,6 @@ You are the Orchestrator agent. The operator describes a mission in plain Englis
 
 ## ProcessBucketPrompt
 (Unused — the Orchestrator never appears in the processing chain. Present only to satisfy the per-agent .md schema.)
+
+## Mission
+Generate ten random integers between 1 and 100, filter out only the prime numbers, sort the survivors strictly ascending, then check the result against those three rules.

@@ -11,6 +11,7 @@ class USkeletalMesh;
 class UInputAction;
 class UInputMappingContext;
 class ABucket;
+class UAgentChatSubsystem;
 class UMacAudioCapture;
 
 UCLASS()
@@ -105,6 +106,28 @@ public:
 	UFUNCTION() void OnVoiceTalkStarted();
 	UFUNCTION() void OnVoiceTalkCompleted();
 
+	// Story 33a — file-driven Orchestrator kickoff. Loads the
+	// `## Mission` section from `Content/Agents/Orchestrator.md` and
+	// pushes it through UAgentChatSubsystem as a user message addressed
+	// to the Orchestrator. The existing OnDAGProposed → spawn pipeline
+	// (Story 32b) takes over from there. No-op (logs Warning) if the
+	// Mission section is empty or the chat subsystem is unavailable.
+	UFUNCTION(BlueprintCallable, Category = "AssemblyLine|Mission")
+	void SendDefaultMission();
+
+	// Story 33a — when true, BeginPlay schedules SendDefaultMission()
+	// ~2 s after the Orchestrator spawns so the demo runs hands-free
+	// (useful for recordings or environments where the mic is unreliable).
+	// Off by default — voice path is the canonical operator entry.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AssemblyLine|Mission")
+	bool bAutoMissionAtBoot = false;
+
+	// Story 33a — test seam. AAssemblyLineGameMode normally resolves the
+	// chat subsystem via GetGameInstance()->GetSubsystem<>(); tests can
+	// inject a transient subsystem directly so they don't need a real
+	// UGameInstance subsystem collection.
+	void SetChatSubsystemForTesting(UAgentChatSubsystem* Chat) { ChatOverride = Chat; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -112,6 +135,13 @@ private:
 	UPROPERTY() TObjectPtr<UInputAction>           VoiceTalkAction;
 	UPROPERTY() TObjectPtr<UInputMappingContext>   VoiceMappingContext;
 	UPROPERTY() TObjectPtr<UMacAudioCapture>       AudioCapture;
+
+	// Story 33a — Enter-key binding for SendDefaultMission. Built lazily
+	// in SetupVoiceInput so it shares the same Enhanced Input plumbing.
+	UPROPERTY() TObjectPtr<UInputAction>           MissionAction;
+
+	// Story 33a — test override (see SetChatSubsystemForTesting).
+	UPROPERTY() TObjectPtr<UAgentChatSubsystem>    ChatOverride;
 
 	// Wires UVoiceSubsystem::OnActiveAgentChanged → station glow + affirmation TTS.
 	FDelegateHandle ActiveAgentChangedHandle;
