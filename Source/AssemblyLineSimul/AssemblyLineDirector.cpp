@@ -190,5 +190,28 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 			TEXT("OnRobotDoneAt: station type %d has no DAG successor"), (int32)Type);
 		return;
 	}
-	DispatchToStation(Successors[0].Kind, Bucket, GetStation(Type));
+
+	AStation* SourceStation = GetStation(Type);
+	if (Successors.Num() == 1)
+	{
+		// Linear case — original bucket forwarded as-is. Story 31a/b regression
+		// net depends on this no-clone, no-destroy behavior.
+		DispatchToStation(Successors[0].Kind, Bucket, SourceStation);
+		return;
+	}
+
+	// Story 31c — fan-out: K > 1 successors. Clone the bucket K times (one per
+	// branch), dispatch each clone, then destroy the original.
+	const FVector CloneSpawnLocation = (SourceStation && SourceStation->OutputSlot)
+		? SourceStation->OutputSlot->GetComponentLocation()
+		: (SourceStation ? SourceStation->GetActorLocation() : FVector::ZeroVector);
+	for (const FNodeRef& Successor : Successors)
+	{
+		ABucket* Clone = Bucket->CloneIntoWorld(GetWorld(), CloneSpawnLocation);
+		if (Clone)
+		{
+			DispatchToStation(Successor.Kind, Clone, SourceStation);
+		}
+	}
+	Bucket->Destroy();
 }

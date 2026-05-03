@@ -66,6 +66,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bucket")
 	void HighlightBallsAtIndices(const TArray<int32>& Indices);
 
+	// Story 31c — spawn an independent copy of this bucket at Location.
+	// Copies Contents and BilliardBallMaterial, then runs RefreshContents on
+	// the new actor so its visualization is fully built. Used by the Director
+	// when a DAG node has K > 1 successors (one clone per branch).
+	ABucket* CloneIntoWorld(UWorld* World, const FVector& Location) const;
+
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 

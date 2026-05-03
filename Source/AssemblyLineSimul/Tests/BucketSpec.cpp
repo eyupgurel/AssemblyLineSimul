@@ -226,6 +226,52 @@ void FBucketSpec::Define()
 			}
 		});
 	});
+
+	Describe("CloneIntoWorld (Story 31c — fan-out)", [this]()
+	{
+		It("returns a distinct ABucket actor with the source's Contents copied", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_CloneIntoWorld_Distinct"));
+			ABucket* Source = SpawnBucket(TW.World);
+			if (!Source) return;
+
+			Source->Contents = { 3, 5, 7 };
+			Source->RefreshContents();
+
+			ABucket* Clone = Source->CloneIntoWorld(TW.World, FVector(123.f, 0.f, 0.f));
+			TestNotNull(TEXT("clone returned"), Clone);
+			if (!Clone) return;
+
+			TestTrue(TEXT("clone is a distinct actor"),  Clone != Source);
+			TestEqual(TEXT("clone Contents.Num"),        Clone->Contents.Num(), 3);
+			TestEqual(TEXT("clone Contents[0]"),         Clone->Contents[0], 3);
+			TestEqual(TEXT("clone Contents[1]"),         Clone->Contents[1], 5);
+			TestEqual(TEXT("clone Contents[2]"),         Clone->Contents[2], 7);
+			TestEqual(TEXT("source Contents preserved"), Source->Contents.Num(), 3);
+		});
+
+		It("propagates BilliardBallMaterial to the clone", [this]()
+		{
+			FScopedTestWorld TW(TEXT("BucketSpec_CloneIntoWorld_Material"));
+			ABucket* Source = SpawnBucket(TW.World);
+			if (!Source) return;
+
+			UMaterialInterface* StubMaterial = LoadObject<UMaterialInterface>(
+				nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+			if (!StubMaterial) return;
+			Source->BilliardBallMaterial = StubMaterial;
+			Source->Contents = { 1 };
+			Source->RefreshContents();
+
+			ABucket* Clone = Source->CloneIntoWorld(TW.World, FVector::ZeroVector);
+			TestNotNull(TEXT("clone returned"), Clone);
+			if (!Clone) return;
+
+			TestTrue(TEXT("clone has the same BilliardBallMaterial soft ref"),
+				Clone->BilliardBallMaterial.ToSoftObjectPath()
+					== Source->BilliardBallMaterial.ToSoftObjectPath());
+		});
+	});
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -281,3 +281,16 @@ void ABucket::HighlightBallsAtIndices(const TArray<int32>& Indices)
 	}
 }
 
+ABucket* ABucket::CloneIntoWorld(UWorld* World, const FVector& Location) const
+{
+	if (!World) return nullptr;
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ABucket* Clone = World->SpawnActor<ABucket>(GetClass(), Location, FRotator::ZeroRotator, Params);
+	if (!Clone) return nullptr;
+	Clone->BilliardBallMaterial = BilliardBallMaterial;
+	Clone->Contents = Contents;
+	Clone->RefreshContents();
+	return Clone;
+}
+
