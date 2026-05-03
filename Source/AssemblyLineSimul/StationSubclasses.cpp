@@ -352,19 +352,36 @@ FString ACheckerStation::GetEffectiveRule() const
 		return CurrentRule;
 	}
 
-	auto RuleOf = [Director](EStationType T)
+	// Story 31a — walk DAG ancestors instead of hardcoded type lookup. For the
+	// linear 4-node chain the resolved rules are byte-identical (AC31a.5);
+	// future fan-in topologies (Story 31d) get correct multi-source composition
+	// without rewriting this method.
+	auto RuleByKind = [Director](const TArray<FNodeRef>& Ancestors, EStationType Kind) -> FString
 	{
-		AStation* S = Director->GetStationOfType(T);
-		return S ? S->CurrentRule : FString(TEXT("(unknown)"));
+		for (const FNodeRef& Ref : Ancestors)
+		{
+			if (Ref.Kind == Kind)
+			{
+				if (AStation* S = Director->GetStationOfType(Kind))
+				{
+					return S->CurrentRule;
+				}
+				return FString(TEXT("(unknown)"));
+			}
+		}
+		return FString(TEXT("(unknown)"));
 	};
+
+	const TArray<FNodeRef> Ancestors = Director->GetDAG().GetAncestors(
+		FNodeRef{EStationType::Checker, 0});
 
 	return AgentPromptLibrary::FormatPrompt(
 		AgentPromptLibrary::LoadAgentSection(
 			EStationType::Checker, TEXT("DerivedRuleTemplate")),
 		{
-			{TEXT("generator_rule"), RuleOf(EStationType::Generator)},
-			{TEXT("filter_rule"),    RuleOf(EStationType::Filter)},
-			{TEXT("sorter_rule"),    RuleOf(EStationType::Sorter)},
+			{TEXT("generator_rule"), RuleByKind(Ancestors, EStationType::Generator)},
+			{TEXT("filter_rule"),    RuleByKind(Ancestors, EStationType::Filter)},
+			{TEXT("sorter_rule"),    RuleByKind(Ancestors, EStationType::Sorter)},
 		});
 }
 

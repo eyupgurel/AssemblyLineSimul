@@ -4,6 +4,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "AssemblyLineTypes.h"
 #include "Bucket.h"  // ABucket complete type needed for TSubclassOf<ABucket>
+#include "DAG/AssemblyLineDAG.h"
 #include "AssemblyLineDirector.generated.h"
 
 class AStation;
@@ -72,12 +73,25 @@ public:
 	// full FSM (e.g. test the empty-bucket recycle path).
 	void OnRobotDoneAt(EStationType Type, ABucket* Bucket);
 
+	// Story 31a — register the line's topology. Per AC31a.6 dispatch routes
+	// through this graph instead of a hardcoded EStationType chain. Returns
+	// false on cycle / duplicate / unknown-parent (build failure already
+	// logs the reason).
+	bool BuildLineDAG(const TArray<FStationNode>& Nodes);
+
+	// Story 31a — pure-domain DAG. Read access is needed by ACheckerStation to
+	// walk ancestors when composing its derived rule (AC31a.5). Held by value;
+	// no engine deps.
+	const FAssemblyLineDAG& GetDAG() const { return DAG; }
+
 private:
 	UPROPERTY()
 	TMap<EStationType, TObjectPtr<AStation>> StationByType;
 
 	UPROPERTY()
 	TMap<EStationType, TObjectPtr<AWorkerRobot>> RobotByStation;
+
+	FAssemblyLineDAG DAG;
 
 	AStation* GetStation(EStationType Type) const;
 	AWorkerRobot* GetRobot(EStationType Type) const;

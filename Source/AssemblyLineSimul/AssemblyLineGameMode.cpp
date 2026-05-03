@@ -82,6 +82,20 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 			Director->RegisterRobot(Robot);
 		}
 	}
+
+	// Story 31a — register the line's topology with the Director's DAG.
+	// Linear chain Generator -> Filter -> Sorter -> Checker. Per AC31a.6
+	// the Director's dispatch routes through this graph.
+	const FNodeRef GenRef{EStationType::Generator, 0};
+	const FNodeRef FilRef{EStationType::Filter,    0};
+	const FNodeRef SorRef{EStationType::Sorter,    0};
+	const FNodeRef ChkRef{EStationType::Checker,   0};
+	Director->BuildLineDAG({
+		FStationNode{GenRef, FString(),       {}},
+		FStationNode{FilRef, FString(), {GenRef}},
+		FStationNode{SorRef, FString(), {FilRef}},
+		FStationNode{ChkRef, FString(), {SorRef}},
+	});
 }
 
 void AAssemblyLineGameMode::SpawnFloor()

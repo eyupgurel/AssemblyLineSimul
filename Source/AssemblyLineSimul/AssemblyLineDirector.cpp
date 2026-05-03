@@ -14,6 +14,11 @@ void UAssemblyLineDirector::RegisterStation(AStation* Station)
 	UE_LOG(LogAssemblyLine, Log, TEXT("Registered station: %s"), *Station->DisplayName);
 }
 
+bool UAssemblyLineDirector::BuildLineDAG(const TArray<FStationNode>& Nodes)
+{
+	return DAG.BuildFromDAG(Nodes);
+}
+
 void UAssemblyLineDirector::RegisterRobot(AWorkerRobot* Robot)
 {
 	if (!Robot || !Robot->AssignedStation) return;
@@ -141,18 +146,10 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 		return;
 	}
 
-	switch (Type)
-	{
-	case EStationType::Generator:
-		DispatchToStation(EStationType::Filter, Bucket, GetStation(EStationType::Generator));
-		break;
-	case EStationType::Filter:
-		DispatchToStation(EStationType::Sorter, Bucket, GetStation(EStationType::Filter));
-		break;
-	case EStationType::Sorter:
-		DispatchToStation(EStationType::Checker, Bucket, GetStation(EStationType::Sorter));
-		break;
-	case EStationType::Checker:
+	// Story 31a — Checker has special handling (accept = end cycle, reject =
+	// dispatch to send-back-to). Every other station's "next station" is just
+	// the DAG's single successor (Story 31c will generalize for fan-out).
+	if (Type == EStationType::Checker)
 	{
 		AWorkerRobot* CheckerBot = GetRobot(EStationType::Checker);
 		const FStationProcessResult R = CheckerBot ? CheckerBot->LastResult : FStationProcessResult{};
@@ -180,9 +177,18 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 			OnCycleRejected.Broadcast(Bucket);
 			DispatchToStation(R.SendBackTo, Bucket, GetStation(EStationType::Checker));
 		}
-		break;
+		return;
 	}
-	default:
-		break;
+
+	const TArray<FNodeRef> Successors = DAG.GetSuccessors(FNodeRef{Type, 0});
+	if (Successors.Num() == 0)
+	{
+		// No successor in the DAG and not the Checker — line is misconfigured
+		// or a future fan-out story is exercising a terminal that isn't Checker.
+		// For Story 31a this is a misconfiguration; surface it.
+		UE_LOG(LogAssemblyLine, Warning,
+			TEXT("OnRobotDoneAt: station type %d has no DAG successor"), (int32)Type);
+		return;
 	}
+	DispatchToStation(Successors[0].Kind, Bucket, GetStation(Type));
 }
