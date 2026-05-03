@@ -262,6 +262,129 @@ void FAssemblyLineDirectorSpec::Define()
 				CountClonesWithContents(TW.World, Source, {9, 10}), 0);
 		});
 	});
+
+	Describe("Fan-in dispatch (Story 31d — K > 1 predecessors)", [this]()
+	{
+		// Helper: spawn a test station with the given type set, register with Director.
+		auto SpawnTestStation = [](UWorld* World, UAssemblyLineDirector* Director,
+			EStationType Type) -> ATestSyncStation*
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ATestSyncStation* S = World->SpawnActor<ATestSyncStation>(
+				ATestSyncStation::StaticClass(),
+				FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (S)
+			{
+				S->StationType = Type;
+				Director->RegisterStation(S);
+			}
+			return S;
+		};
+
+		It("waits for both parents on a 2->1 fan-in, then fires merge with both inputs", [this, SpawnTestStation]()
+		{
+			// After merge, OnRobotDoneAt continues from the merge target (Sorter)
+			// which has no successor in this DAG — expect one warning.
+			AddExpectedError(TEXT("no DAG successor"),
+				EAutomationExpectedErrorFlags::Contains, /*ExpectedNumOccurrences=*/1);
+
+			FScopedTestWorld TW(TEXT("DirectorSpec_FanIn_2to1"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			// 2->1 DAG: Generator -> Sorter, Filter -> Sorter.
+			const FNodeRef A{EStationType::Generator, 0};
+			const FNodeRef B{EStationType::Filter,    0};
+			const FNodeRef C{EStationType::Sorter,    0};
+			Director->BuildLineDAG({
+				FStationNode{A, FString(),    {}},
+				FStationNode{B, FString(),    {}},
+				FStationNode{C, FString(), {A, B}},
+			});
+
+			ATestSyncStation* StationC = SpawnTestStation(TW.World, Director, EStationType::Sorter);
+			TestNotNull(TEXT("Sorter test station spawned + registered"), StationC);
+			if (!StationC) return;
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ABucket* BucketA = TW.World->SpawnActor<ABucket>(
+				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			ABucket* BucketB = TW.World->SpawnActor<ABucket>(
+				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			BucketA->Contents = { 1, 2, 3 };
+			BucketB->Contents = { 4, 5, 6 };
+
+			Director->OnRobotDoneAt(EStationType::Generator, BucketA);
+			TestEqual(TEXT("after first arrival, no merge yet"), StationC->ProcessCallCount, 0);
+
+			Director->OnRobotDoneAt(EStationType::Filter, BucketB);
+			TestEqual(TEXT("after second arrival, merge fired exactly once"),
+				StationC->ProcessCallCount, 1);
+			TestEqual(TEXT("merge received both inputs"),
+				StationC->LastInputs.Num(), 2);
+			if (StationC->LastInputs.Num() != 2) return;
+
+			// Arrival order: BucketA first → Inputs[0]; BucketB second → Inputs[1].
+			// Per AC31d.3, Inputs[0] survives the merge, Inputs[1..K-1] destroyed.
+			TestTrue(TEXT("primary input (Inputs[0], BucketA) survives the merge"),
+				IsValid(StationC->LastInputs[0].Get()));
+			TestFalse(TEXT("secondary input (Inputs[1], BucketB) destroyed after merge"),
+				IsValid(StationC->LastInputs[1].Get()));
+			TestEqual(TEXT("primary input identity is BucketA"),
+				StationC->LastInputs[0].Get(), BucketA);
+		});
+
+		It("the wait state resets after each merge — successive cycles re-fan-in", [this, SpawnTestStation]()
+		{
+			// Each cycle's post-merge OnRobotDoneAt(Sorter, ...) hits the
+			// no-successor branch — two cycles → two warnings.
+			AddExpectedError(TEXT("no DAG successor"),
+				EAutomationExpectedErrorFlags::Contains, /*ExpectedNumOccurrences=*/2);
+
+			FScopedTestWorld TW(TEXT("DirectorSpec_FanIn_CycleReEntry"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			const FNodeRef A{EStationType::Generator, 0};
+			const FNodeRef B{EStationType::Filter,    0};
+			const FNodeRef C{EStationType::Sorter,    0};
+			Director->BuildLineDAG({
+				FStationNode{A, FString(),    {}},
+				FStationNode{B, FString(),    {}},
+				FStationNode{C, FString(), {A, B}},
+			});
+
+			ATestSyncStation* StationC = SpawnTestStation(TW.World, Director, EStationType::Sorter);
+			if (!StationC) return;
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			// Cycle 1.
+			ABucket* C1A = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			ABucket* C1B = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			C1A->Contents = {10}; C1B->Contents = {20};
+			Director->OnRobotDoneAt(EStationType::Generator, C1A);
+			Director->OnRobotDoneAt(EStationType::Filter,    C1B);
+			TestEqual(TEXT("merge fired once after cycle 1"), StationC->ProcessCallCount, 1);
+
+			// Cycle 2 — wait state must have reset for this to fire correctly.
+			ABucket* C2A = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			ABucket* C2B = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			C2A->Contents = {30}; C2B->Contents = {40};
+			Director->OnRobotDoneAt(EStationType::Generator, C2A);
+			TestEqual(TEXT("after cycle-2 first arrival, no second merge yet"),
+				StationC->ProcessCallCount, 1);
+
+			Director->OnRobotDoneAt(EStationType::Filter, C2B);
+			TestEqual(TEXT("merge fired again after cycle-2 second arrival"),
+				StationC->ProcessCallCount, 2);
+			TestEqual(TEXT("cycle-2 LastInputs has both cycle-2 buckets"),
+				StationC->LastInputs.Num(), 2);
+		});
+	});
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

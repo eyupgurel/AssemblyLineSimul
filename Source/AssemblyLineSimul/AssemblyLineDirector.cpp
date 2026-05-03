@@ -194,24 +194,103 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 	AStation* SourceStation = GetStation(Type);
 	if (Successors.Num() == 1)
 	{
-		// Linear case — original bucket forwarded as-is. Story 31a/b regression
-		// net depends on this no-clone, no-destroy behavior.
-		DispatchToStation(Successors[0].Kind, Bucket, SourceStation);
+		// Linear case — original bucket forwarded as-is unless the destination
+		// is a fan-in node, in which case we queue. Story 31a/b regression net
+		// depends on the no-queue, no-clone, no-destroy path when neither
+		// fan-out nor fan-in apply.
+		if (!QueueForFanInOrDispatch(Successors[0], Bucket, Type))
+		{
+			DispatchToStation(Successors[0].Kind, Bucket, SourceStation);
+		}
 		return;
 	}
 
 	// Story 31c — fan-out: K > 1 successors. Clone the bucket K times (one per
-	// branch), dispatch each clone, then destroy the original.
+	// branch); each clone is also subject to the queue-for-fan-in check on its
+	// destination (Story 31d).
 	const FVector CloneSpawnLocation = (SourceStation && SourceStation->OutputSlot)
 		? SourceStation->OutputSlot->GetComponentLocation()
 		: (SourceStation ? SourceStation->GetActorLocation() : FVector::ZeroVector);
 	for (const FNodeRef& Successor : Successors)
 	{
 		ABucket* Clone = Bucket->CloneIntoWorld(GetWorld(), CloneSpawnLocation);
-		if (Clone)
+		if (!Clone) continue;
+		if (!QueueForFanInOrDispatch(Successor, Clone, Type))
 		{
 			DispatchToStation(Successor.Kind, Clone, SourceStation);
 		}
 	}
 	Bucket->Destroy();
+}
+
+bool UAssemblyLineDirector::QueueForFanInOrDispatch(const FNodeRef& Child, ABucket* Bucket, EStationType ParentType)
+{
+	const TArray<FNodeRef> Parents = DAG.GetParents(Child);
+	if (Parents.Num() <= 1)
+	{
+		return false;  // not a fan-in node — caller dispatches normally
+	}
+
+	TSet<FNodeRef>& Waits = WaitingFor.FindOrAdd(Child);
+	if (Waits.IsEmpty())
+	{
+		// First arrival of this cycle — initialize the wait set from the DAG.
+		// Subsequent cycles re-enter via this branch after FireFanInMerge
+		// cleared the entry, so the gate works for every cycle, not just
+		// the first.
+		for (const FNodeRef& P : Parents) Waits.Add(P);
+	}
+
+	Waits.Remove(FNodeRef{ParentType, 0});
+	InboundBuckets.FindOrAdd(Child).Add(Bucket);
+
+	if (Waits.IsEmpty())
+	{
+		FireFanInMerge(Child);
+	}
+	return true;
+}
+
+void UAssemblyLineDirector::FireFanInMerge(const FNodeRef& Child)
+{
+	TArray<TWeakObjectPtr<ABucket>> Weak;
+	if (TArray<TWeakObjectPtr<ABucket>>* Found = InboundBuckets.Find(Child))
+	{
+		Weak = *Found;
+	}
+	InboundBuckets.Remove(Child);
+	WaitingFor.Remove(Child);  // resets for the next cycle's arrivals
+
+	TArray<ABucket*> Inputs;
+	Inputs.Reserve(Weak.Num());
+	for (const TWeakObjectPtr<ABucket>& W : Weak)
+	{
+		if (ABucket* B = W.Get()) Inputs.Add(B);
+	}
+
+	AStation* ChildStation = GetStation(Child.Kind);
+	if (!ChildStation || Inputs.Num() == 0)
+	{
+		UE_LOG(LogAssemblyLine, Warning,
+			TEXT("FireFanInMerge: missing station or empty inputs for Kind=%d"),
+			(int32)Child.Kind);
+		return;
+	}
+
+	// Bypass the worker's BeginTask for the merge step (Story 31d out-of-scope:
+	// physical multi-bucket carry by the worker). Direct call into ProcessBucket;
+	// continue the dispatch chain from Inputs[0] in OnComplete.
+	const FNodeRef ChildCopy = Child;
+	ChildStation->ProcessBucket(Inputs,
+		FStationProcessComplete::CreateLambda([this, ChildCopy, Inputs](FStationProcessResult /*Result*/)
+		{
+			for (int32 i = 1; i < Inputs.Num(); ++i)
+			{
+				if (IsValid(Inputs[i])) Inputs[i]->Destroy();
+			}
+			if (Inputs.Num() > 0 && IsValid(Inputs[0]))
+			{
+				OnRobotDoneAt(ChildCopy.Kind, Inputs[0]);
+			}
+		}));
 }

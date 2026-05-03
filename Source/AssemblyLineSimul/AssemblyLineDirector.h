@@ -93,8 +93,28 @@ private:
 
 	FAssemblyLineDAG DAG;
 
+	// Story 31d — fan-in wait state. WaitingFor[Child] is the set of parents
+	// not yet arrived for the current cycle; lazily re-populated from
+	// DAG.GetParents(Child) on first arrival of each cycle. InboundBuckets
+	// holds the queued parent buckets until all K arrive. TWeakObjectPtr is
+	// GC-safe for the brief queue→fire window.
+	TMap<FNodeRef, TSet<FNodeRef>>                  WaitingFor;
+	TMap<FNodeRef, TArray<TWeakObjectPtr<ABucket>>> InboundBuckets;
+
 	AStation* GetStation(EStationType Type) const;
 	AWorkerRobot* GetRobot(EStationType Type) const;
 
 	void DispatchToStation(EStationType Type, ABucket* Bucket, AStation* SourceStation);
+
+	// Story 31d — if Child is a fan-in node (>1 parents in the DAG), queue
+	// Bucket and update the wait set. Returns true if queued (caller must
+	// NOT dispatch normally); false otherwise. Fires the merge inline when
+	// the wait set drains to empty.
+	bool QueueForFanInOrDispatch(const FNodeRef& Child, ABucket* Bucket, EStationType ParentType);
+
+	// Story 31d — invoked by QueueForFanInOrDispatch when WaitingFor[Child]
+	// drains. Calls Child's ProcessBucket with all queued inputs; on
+	// OnComplete destroys Inputs[1..N-1] and continues the dispatch chain
+	// from Inputs[0].
+	void FireFanInMerge(const FNodeRef& Child);
 };

@@ -19,9 +19,15 @@ class ATestSyncStation : public AStation
 public:
 	int32 ProcessCallCount = 0;
 
+	// Story 31d — captured so specs can assert on the multi-input array
+	// passed to a fan-in merge.
+	TArray<TWeakObjectPtr<ABucket>> LastInputs;
+
 	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete) override
 	{
 		++ProcessCallCount;
+		LastInputs.Reset();
+		for (ABucket* B : Inputs) LastInputs.Add(B);
 		FStationProcessResult Result;
 		Result.bAccepted = true;
 		OnComplete.ExecuteIfBound(Result);
