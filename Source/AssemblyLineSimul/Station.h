@@ -61,7 +61,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Station")
 	FString CurrentRule;
 
-	virtual void ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete);
+	// Story 31b — accepts multiple input buckets to support fan-in (Story 31d).
+	// Today (and through 31c) Inputs.Num() is always 1; subclasses read Inputs[0].
+	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete);
 
 	// Returns the rule the station should actually use right now. Defaults to CurrentRule;
 	// Checker overrides to compose Generator/Filter/Sorter rules when in derived mode.

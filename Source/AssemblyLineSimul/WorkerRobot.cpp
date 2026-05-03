@@ -327,7 +327,7 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 			{
 				TWeakObjectPtr<AWorkerRobot> WeakThis(this);
 				ABucket* Bucket = CurrentBucket;
-				AssignedStation->ProcessBucket(Bucket,
+				AssignedStation->ProcessBucket(TArray<ABucket*>{Bucket},
 					FStationProcessComplete::CreateLambda([WeakThis](FStationProcessResult Result)
 					{
 						if (AWorkerRobot* Self = WeakThis.Get())

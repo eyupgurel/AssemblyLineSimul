@@ -75,8 +75,9 @@ AGeneratorStation::AGeneratorStation()
 		EStationType::Generator, TEXT("DefaultRule"));
 }
 
-void AGeneratorStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
+void AGeneratorStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
 {
+	ABucket* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
 	if (!Bucket)
 	{
 		FStationProcessResult R; R.bAccepted = false; R.Reason = TEXT("Null bucket");
@@ -176,8 +177,9 @@ TArray<int32> AFilterStation::FindKeptIndices(
 	return Result;
 }
 
-void AFilterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
+void AFilterStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
 {
+	ABucket* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
 	if (!Bucket)
 	{
 		FStationProcessResult R; R.bAccepted = false; R.Reason = TEXT("Null bucket");
@@ -268,8 +270,9 @@ ASorterStation::ASorterStation()
 		EStationType::Sorter, TEXT("DefaultRule"));
 }
 
-void ASorterStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
+void ASorterStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
 {
+	ABucket* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
 	if (!Bucket)
 	{
 		FStationProcessResult R; R.bAccepted = false; R.Reason = TEXT("Null bucket");
@@ -395,8 +398,9 @@ void ACheckerStation::OnRuleSetByChat()
 	}
 }
 
-void ACheckerStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
+void ACheckerStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
 {
+	ABucket* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
 	if (!Bucket)
 	{
 		FStationProcessResult R; R.bAccepted = false; R.Reason = TEXT("Null bucket");

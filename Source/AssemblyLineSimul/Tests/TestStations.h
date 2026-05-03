@@ -19,7 +19,7 @@ class ATestSyncStation : public AStation
 public:
 	int32 ProcessCallCount = 0;
 
-	virtual void ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete) override
+	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete) override
 	{
 		++ProcessCallCount;
 		FStationProcessResult Result;
@@ -37,7 +37,7 @@ public:
 	int32 ProcessCallCount = 0;
 	FStationProcessComplete CapturedDelegate;
 
-	virtual void ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete) override
+	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete) override
 	{
 		++ProcessCallCount;
 		CapturedDelegate = OnComplete;

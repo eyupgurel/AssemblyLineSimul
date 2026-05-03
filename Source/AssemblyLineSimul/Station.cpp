@@ -58,7 +58,7 @@ AStation::AStation()
 	ActiveLight->SetLightColor(FLinearColor(0.4f, 1.0f, 1.0f));  // cyan
 }
 
-void AStation::ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete)
+void AStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
 {
 	FStationProcessResult Result;
 	Result.bAccepted = true;
