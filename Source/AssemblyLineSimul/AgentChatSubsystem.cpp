@@ -3,6 +3,7 @@
 #include "AssemblyLineDirector.h"
 #include "Bucket.h"
 #include "ClaudeAPISubsystem.h"
+#include "DAG/OrchestratorParser.h"
 #include "Station.h"
 #include "WorkerRobot.h"
 #include "Dom/JsonObject.h"
@@ -101,11 +102,11 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 {
 	FString Reply;
 	FString NewRule;
+	TSharedPtr<FJsonObject> Root;
 
 	if (bSuccess)
 	{
 		FString JsonStr;
-		TSharedPtr<FJsonObject> Root;
 		if (ExtractJsonObject(Response, JsonStr))
 		{
 			const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
@@ -125,6 +126,30 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 	else
 	{
 		Reply = FString::Printf(TEXT("(can't reach Claude: %s)"), *Response);
+	}
+
+	// Story 32b — Orchestrator-only: if the reply contained a non-null `dag`
+	// object, re-serialize it back to JSON text and run it through
+	// OrchestratorParser. On a successful parse, broadcast OnDAGProposed so
+	// AAssemblyLineGameMode can spawn the line. dag: null (small-talk) or
+	// non-Orchestrator agents skip this entirely.
+	if (bSuccess && StationType == EStationType::Orchestrator && Root.IsValid())
+	{
+		const TSharedPtr<FJsonValue> DagValue = Root->TryGetField(TEXT("dag"));
+		if (DagValue.IsValid() && DagValue->Type == EJson::Object)
+		{
+			FString DagJson;
+			const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&DagJson);
+			FJsonSerializer::Serialize(DagValue->AsObject().ToSharedRef(), Writer);
+			TArray<FStationNode> Nodes;
+			if (OrchestratorParser::ParseDAGSpec(DagJson, Nodes))
+			{
+				UE_LOG(LogAgentChat, Display,
+					TEXT("[Orchestrator] DAG accepted (%d nodes) — broadcasting OnDAGProposed"),
+					Nodes.Num());
+				OnDAGProposed.Broadcast(Nodes);
+			}
+		}
 	}
 
 	// Apply the new rule (if any) to the live station before broadcasting the reply.

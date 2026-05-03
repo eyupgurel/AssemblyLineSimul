@@ -29,7 +29,7 @@ AAssemblyLineGameMode::AAssemblyLineGameMode()
 	// and are not possessed by the player.
 }
 
-void AAssemblyLineGameMode::SpawnAssemblyLine()
+void AAssemblyLineGameMode::SpawnOrchestrator()
 {
 	UWorld* World = GetWorld();
 	if (!World) return;
@@ -37,26 +37,100 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return;
 
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// Place the orchestrator at the line origin so the operator's first
+	// view at boot has the lone agent dead-center on the dock floor. The
+	// rest of the line (when it spawns from a mission) extends to +X from
+	// here in spec iteration order.
+	AStation* Orch = World->SpawnActor<AStation>(
+		AOrchestratorStation::StaticClass(), LineOrigin, FRotator::ZeroRotator, Params);
+	if (!Orch) return;
+	Director->RegisterStation(Orch);
+}
+
+bool AAssemblyLineGameMode::SpawnLineFromSpec(const TArray<FStationNode>& Nodes)
+{
+	UWorld* World = GetWorld();
+	if (!World) return false;
+
+	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
+	if (!Director) return false;
+
+	// AC32b.9 — single-instance-per-kind constraint. Chat / voice routing
+	// keys on EStationType today; multi-instance disambiguation is a future
+	// story. Reject upfront so the spawn loop doesn't half-build a line.
+	{
+		TSet<EStationType> Seen;
+		for (const FStationNode& N : Nodes)
+		{
+			bool bAlreadyIn = false;
+			Seen.Add(N.Ref.Kind, &bAlreadyIn);
+			if (bAlreadyIn)
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("SpawnLineFromSpec: spec contains duplicate kind %d "
+					     "(v1 single-instance constraint, AC32b.9)."),
+					(int32)N.Ref.Kind);
+				return false;
+			}
+		}
+	}
+
+	// Validate the topology before touching the world. BuildLineDAG runs
+	// Kahn's cycle check + duplicate-NodeRef check; on failure DAG is left
+	// empty and we abort without spawning.
+	if (!Director->BuildLineDAG(Nodes))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("SpawnLineFromSpec: DAG validation failed (cycle / duplicate / unknown parent)."));
+		return false;
+	}
+
 	if (BucketClass)
 	{
 		Director->BucketClass = BucketClass;
 	}
 
-	const TArray<TSubclassOf<AStation>> Specs = {
-		AGeneratorStation::StaticClass(),
-		AFilterStation::StaticClass(),
-		ASorterStation::StaticClass(),
-		ACheckerStation::StaticClass()
+	auto SubclassFor = [](EStationType Kind) -> TSubclassOf<AStation>
+	{
+		switch (Kind)
+		{
+		case EStationType::Generator: return AGeneratorStation::StaticClass();
+		case EStationType::Filter:    return AFilterStation::StaticClass();
+		case EStationType::Sorter:    return ASorterStation::StaticClass();
+		case EStationType::Checker:   return ACheckerStation::StaticClass();
+		default:                      return nullptr;
+		}
 	};
 
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	for (int32 i = 0; i < Specs.Num(); ++i)
+	for (int32 i = 0; i < Nodes.Num(); ++i)
 	{
+		const FStationNode& Node = Nodes[i];
+		TSubclassOf<AStation> Sub = SubclassFor(Node.Ref.Kind);
+		if (!Sub)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("SpawnLineFromSpec: no subclass for kind %d (skipping)."),
+				(int32)Node.Ref.Kind);
+			continue;
+		}
+
 		const FVector Loc = LineOrigin + FVector((float)i * StationSpacing, 0.f, 0.f);
-		AStation* Station = World->SpawnActor<AStation>(Specs[i], Loc, FRotator::ZeroRotator, Params);
+		AStation* Station = World->SpawnActor<AStation>(Sub, Loc, FRotator::ZeroRotator, Params);
 		if (!Station) continue;
+
+		// Apply the per-node rule from the spec when one was supplied; an
+		// empty rule leaves the subclass default in place so the legacy
+		// 4-station spec (FString() rules) keeps the .md DefaultRule.
+		if (!Node.Rule.IsEmpty())
+		{
+			Station->CurrentRule = Node.Rule;
+		}
 		Director->RegisterStation(Station);
 
 		const FVector RobotLoc = Station->WorkerStandPoint
@@ -68,8 +142,6 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 		if (Robot)
 		{
 			Robot->AssignStation(Station);
-			// Generator skips the WorkTimer wait — its ProcessBucket fills + holds, so the
-			// camera doesn't sit on an empty table.
 			Robot->WorkDuration = (Station->StationType == EStationType::Generator)
 				? 0.f
 				: StationWorkDuration;
@@ -83,19 +155,7 @@ void AAssemblyLineGameMode::SpawnAssemblyLine()
 		}
 	}
 
-	// Story 31a — register the line's topology with the Director's DAG.
-	// Linear chain Generator -> Filter -> Sorter -> Checker. Per AC31a.6
-	// the Director's dispatch routes through this graph.
-	const FNodeRef GenRef{EStationType::Generator, 0};
-	const FNodeRef FilRef{EStationType::Filter,    0};
-	const FNodeRef SorRef{EStationType::Sorter,    0};
-	const FNodeRef ChkRef{EStationType::Checker,   0};
-	Director->BuildLineDAG({
-		FStationNode{GenRef, FString(),       {}},
-		FStationNode{FilRef, FString(), {GenRef}},
-		FStationNode{SorRef, FString(), {FilRef}},
-		FStationNode{ChkRef, FString(), {SorRef}},
-	});
+	return true;
 }
 
 void AAssemblyLineGameMode::SpawnFloor()
@@ -167,14 +227,38 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 		ACinematicCameraDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
 	if (!Cinematic) return;
 
-	const int32 StationCount = 4;
-	const FVector LineCenter = LineOrigin
-		+ FVector(static_cast<float>(StationCount - 1) * 0.5f * StationSpacing, 0.f, 0.f);
+	// Story 32b — shots regen from spawned line stations (DAG order),
+	// not a hardcoded StationCount=4 layout. Walks the DAG so the camera
+	// adapts to whatever topology the Orchestrator decided to build.
+	struct FStationShot { EStationType Kind; FVector Location; };
+	TArray<FStationShot> Spawned;
 
-	auto StationLoc = [&](int32 Idx)
+	auto AppendKind = [&](EStationType Kind)
 	{
-		return LineOrigin + FVector(static_cast<float>(Idx) * StationSpacing, 0.f, 0.f);
+		if (Kind == EStationType::Orchestrator) return;  // chat-only, no closeup
+		if (AStation* S = Director->GetStationOfType(Kind))
+		{
+			Spawned.Add({Kind, S->GetActorLocation()});
+		}
 	};
+
+	// Walk source nodes + their full descendant set. For a single-source
+	// linear line this gives sources + ancestors-of-each-terminal-in-order;
+	// for fan-out it covers every spawned station once.
+	const FAssemblyLineDAG& DAG = Director->GetDAG();
+	TSet<EStationType> SeenKinds;
+	for (const FNodeRef& Src : DAG.GetSourceNodes())
+	{
+		if (!SeenKinds.Contains(Src.Kind)) { SeenKinds.Add(Src.Kind); AppendKind(Src.Kind); }
+	}
+	for (const FNodeRef& Term : DAG.GetTerminalNodes())
+	{
+		for (const FNodeRef& A : DAG.GetAncestors(Term))
+		{
+			if (!SeenKinds.Contains(A.Kind)) { SeenKinds.Add(A.Kind); AppendKind(A.Kind); }
+		}
+		if (!SeenKinds.Contains(Term.Kind)) { SeenKinds.Add(Term.Kind); AppendKind(Term.Kind); }
+	}
 
 	auto MakeShot = [](const FVector& Loc, const FVector& LookAt, float FOV, float Hold, float Blend)
 	{
@@ -188,27 +272,47 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 	};
 
 	Cinematic->Shots.Reset();
-	// 0: wide overview (also the resume shot). Slow blend out of closeups for relaxed pacing.
-	Cinematic->Shots.Add(MakeShot(LineCenter + FVector(-2200.f, 2200.f, 1600.f), LineCenter, 85.f, 8.f, 2.5f));
-	// 1..4: high-angle overhead per station — camera tilted ~57° down from a slight Y offset
-	// so we look at the bucket sitting on the worktable. Bucket dock is at S + (0, 0, 120ish);
-	// camera at S + (0, 250, 500) → distance ~460cm, FOV 45° → ~380cm view width.
-	for (int32 i = 0; i < StationCount; ++i)
+	Cinematic->StationCloseupShotIndex.Reset();
+
+	if (Spawned.Num() == 0)
 	{
-		const FVector S = StationLoc(i);
-		const FVector TableTop = S + FVector(0.f, 0.f, 120.f);
-		Cinematic->Shots.Add(MakeShot(S + FVector(0.f, 250.f, 500.f), TableTop, 45.f, 25.f, 2.5f));
+		// Nothing to look at — keep a single overview centered on LineOrigin
+		// so the cinematic doesn't crash at Start(). Mostly relevant to tests
+		// that call SpawnCinematicDirector with no spawned line.
+		Cinematic->Shots.Add(MakeShot(LineOrigin + FVector(-2200.f, 2200.f, 1600.f), LineOrigin, 85.f, 8.f, 2.5f));
+		Cinematic->CheckerShotIndex = 0;
+		Cinematic->ResumeShotIndex  = 0;
+		Cinematic->LingerSecondsAfterIdle = 0.f;
+		Cinematic->BindToAssemblyLine(Director);
+		Cinematic->Start();
+		return;
 	}
 
-	Cinematic->StationCloseupShotIndex.Reset();
-	Cinematic->StationCloseupShotIndex.Add(EStationType::Generator, 1);
-	Cinematic->StationCloseupShotIndex.Add(EStationType::Filter,    2);
-	Cinematic->StationCloseupShotIndex.Add(EStationType::Sorter,    3);
-	Cinematic->StationCloseupShotIndex.Add(EStationType::Checker,   4);
-	Cinematic->CheckerShotIndex = 4;
+	// Compute line center as the centroid of spawned-station X positions.
+	FVector Centroid = FVector::ZeroVector;
+	for (const FStationShot& S : Spawned) { Centroid += S.Location; }
+	Centroid /= (float)Spawned.Num();
+
+	// Index 0: wide overview.
+	Cinematic->Shots.Add(MakeShot(Centroid + FVector(-2200.f, 2200.f, 1600.f), Centroid, 85.f, 8.f, 2.5f));
+
+	// Indices 1..N: per-station closeups.
+	int32 CheckerShot = 0;
+	for (int32 i = 0; i < Spawned.Num(); ++i)
+	{
+		const FVector S = Spawned[i].Location;
+		const FVector TableTop = S + FVector(0.f, 0.f, 120.f);
+		const int32 ShotIdx = Cinematic->Shots.Add(
+			MakeShot(S + FVector(0.f, 250.f, 500.f), TableTop, 45.f, 25.f, 2.5f));
+		Cinematic->StationCloseupShotIndex.Add(Spawned[i].Kind, ShotIdx);
+		if (Spawned[i].Kind == EStationType::Checker)
+		{
+			CheckerShot = ShotIdx;
+		}
+	}
+
+	Cinematic->CheckerShotIndex = CheckerShot;
 	Cinematic->ResumeShotIndex  = 0;
-	// Zoom out the moment Working ends so the audience sees the bucket get carried from the
-	// table (instead of staying on the closeup through the carry).
 	Cinematic->LingerSecondsAfterIdle = 0.f;
 
 	Cinematic->BindToAssemblyLine(Director);
@@ -394,10 +498,11 @@ void AAssemblyLineGameMode::HandleActiveAgentChanged(EStationType Agent)
 		const TCHAR* FriendlyName = TEXT("Agent");
 		switch (Agent)
 		{
-		case EStationType::Generator: FriendlyName = TEXT("Generator"); break;
-		case EStationType::Filter:    FriendlyName = TEXT("Filter");    break;
-		case EStationType::Sorter:    FriendlyName = TEXT("Sorter");    break;
-		case EStationType::Checker:   FriendlyName = TEXT("Checker");   break;
+		case EStationType::Generator:    FriendlyName = TEXT("Generator");    break;
+		case EStationType::Filter:       FriendlyName = TEXT("Filter");       break;
+		case EStationType::Sorter:       FriendlyName = TEXT("Sorter");       break;
+		case EStationType::Checker:      FriendlyName = TEXT("Checker");      break;
+		case EStationType::Orchestrator: FriendlyName = TEXT("Orchestrator"); break;
 		}
 		const FString Affirmation = FString::Printf(
 			TEXT("%s here, reading you loud and clear. Go ahead."), FriendlyName);
@@ -426,20 +531,55 @@ void AAssemblyLineGameMode::BeginPlay()
 			TEXT("AssemblyLineGameMode running"));
 	}
 
-	SpawnAssemblyLine();
+	// Story 32b — Orchestrator-only boot. Floor + feedback + voice input
+	// + the lone Orchestrator station spawn upfront. The line itself
+	// (stations + workers + cinematic shots + first cycle) materializes
+	// later via SpawnLineFromSpec when the Orchestrator returns a DAG
+	// in response to the operator's mission. No timer-based StartCycle
+	// at boot.
 	SpawnFloor();
-	SpawnCinematicDirector();
 	SpawnFeedback();
 	SetupVoiceInput();
+	SpawnOrchestrator();
 
+	// Story 32b — wire the chat subsystem's OnDAGProposed delegate to the
+	// mission-driven spawn pipeline. When the Orchestrator returns a parsed
+	// DAG, materialize the line, regenerate the cinematic from the spawned
+	// positions, and start the first cycle on every source.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UAgentChatSubsystem* Chat = GI->GetSubsystem<UAgentChatSubsystem>())
+		{
+			DAGProposedHandle = Chat->OnDAGProposed.AddUObject(
+				this, &AAssemblyLineGameMode::HandleDAGProposed);
+		}
+	}
+}
+
+void AAssemblyLineGameMode::HandleDAGProposed(const TArray<FStationNode>& Nodes)
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return;
 
+	if (!SpawnLineFromSpec(Nodes))
+	{
+		// SpawnLineFromSpec already logged the reason. Don't spawn the
+		// cinematic or start cycles for a half-built world.
+		return;
+	}
+
+	SpawnCinematicDirector();
+
+	// Brief pause so the camera has time to settle on the wide overview
+	// before the first bucket appears at the source dock — same vibe as
+	// the original BeginPlay startup.
 	FTimerHandle Th;
 	World->GetTimerManager().SetTimer(Th,
 		FTimerDelegate::CreateLambda([Director]()
 		{
-			Director->StartCycle();
+			Director->StartAllSourceCycles();
 		}),
 		1.5f, false);
 }

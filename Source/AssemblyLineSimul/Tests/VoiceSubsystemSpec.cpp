@@ -35,10 +35,14 @@ void FVoiceSubsystemSpec::Define()
 {
 	Describe("Initial state", [this]()
 	{
-		It("starts with no active agent", [this]()
+		// Story 32b AC32b.2 — Orchestrator is the default-active agent so the
+		// operator's first push-to-talk routes to it without needing a hail.
+		It("starts with Orchestrator as the default-active agent", [this]()
 		{
 			FVoiceTestEnv Env;
-			TestFalse(TEXT("no active agent at construction"), Env.Voice->HasActiveAgent());
+			TestTrue(TEXT("has active agent at construction"), Env.Voice->HasActiveAgent());
+			TestEqual(TEXT("default-active is Orchestrator"),
+				Env.Voice->GetActiveAgent(), EStationType::Orchestrator);
 		});
 	});
 

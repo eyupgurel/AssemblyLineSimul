@@ -4,10 +4,16 @@
 #include "HAL/PlatformProcess.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "AssemblyLineTypes.h"
+#include "DAG/AssemblyLineDAG.h"  // FStationNode in OnDAGProposed payload (Story 32b)
 #include "AgentChatSubsystem.generated.h"
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAgentResponded, EStationType /*StationType*/);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnRuleUpdated, EStationType /*StationType*/, const FString& /*NewRule*/);
+// Story 32b — fired when the Orchestrator's chat reply contains a `dag` JSON
+// spec that parses successfully. AAssemblyLineGameMode subscribes; the handler
+// calls SpawnLineFromSpec to materialize the line. dag: null replies (small-talk)
+// do NOT fire this delegate.
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnDAGProposed, const TArray<FStationNode>& /*Nodes*/);
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API UAgentChatSubsystem : public UGameInstanceSubsystem
@@ -37,6 +43,10 @@ public:
 	// it to the target station. Subscribers (UI banners, telemetry, tests) can
 	// react without polling. Payload: which station + the new rule text.
 	FOnRuleUpdated OnRuleUpdated;
+
+	// Story 32b — fires when the Orchestrator's chat reply contains a `dag`
+	// JSON spec that parses successfully. Payload: the parsed station nodes.
+	FOnDAGProposed OnDAGProposed;
 
 	// Public so external systems (e.g. the voice-hail handshake in the GameMode)
 	// can push arbitrary text through the same macOS `say` pipeline used for chat

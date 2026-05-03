@@ -30,6 +30,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AssemblyLine")
 	void StartCycle();
 
+	// Story 32b — generalizes StartCycle for arbitrary spawned topologies.
+	// Walks DAG.GetSourceNodes() and dispatches an empty bucket to each.
+	// In a single-source line this collapses to one StartCycle call; in a
+	// fan-in topology it kicks both source branches simultaneously so the
+	// merge gate fires once both arrive.
+	UFUNCTION(BlueprintCallable, Category = "AssemblyLine")
+	void StartAllSourceCycles();
+
 	// Fires when the Checker accepts a bucket (i.e. one full cycle finished without rework).
 	FOnAssemblyLineCycleCompleted OnCycleCompleted;
 

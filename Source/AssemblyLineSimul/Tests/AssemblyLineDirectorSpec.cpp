@@ -255,6 +255,86 @@ void FAssemblyLineDirectorSpec::Define()
 		});
 	});
 
+	Describe("StartAllSourceCycles (Story 32b — multi-source dispatch)", [this]()
+	{
+		auto SpawnTestStation = [](UWorld* World, UAssemblyLineDirector* Director,
+			EStationType Type) -> ATestSyncStation*
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ATestSyncStation* S = World->SpawnActor<ATestSyncStation>(
+				ATestSyncStation::StaticClass(),
+				FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (S)
+			{
+				S->StationType = Type;
+				Director->RegisterStation(S);
+			}
+			return S;
+		};
+
+		auto CountBuckets = [](UWorld* World) -> int32
+		{
+			int32 N = 0;
+			for (TActorIterator<ABucket> It(World); It; ++It)
+			{
+				if (IsValid(*It)) ++N;
+			}
+			return N;
+		};
+
+		It("dispatches one bucket per source node — two sources => two buckets", [this, SpawnTestStation, CountBuckets]()
+		{
+			// DispatchToStation will warn for missing robots — we're not
+			// spawning AWorkerRobots in this spec.
+			AddExpectedError(TEXT("missing station or robot"),
+				EAutomationExpectedErrorFlags::Contains, /*ExpectedNumOccurrences=*/2);
+
+			FScopedTestWorld TW(TEXT("DirectorSpec_StartAllSources_TwoSources"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			// Two-source fan-in: Generator + Filter both source, Sorter merges.
+			const FNodeRef A{EStationType::Generator, 0};
+			const FNodeRef B{EStationType::Filter,    0};
+			const FNodeRef C{EStationType::Sorter,    0};
+			Director->BuildLineDAG(FDAGBuilder()
+				.Source(A).Source(B).Edge(A, C).Edge(B, C).Build());
+
+			SpawnTestStation(TW.World, Director, EStationType::Generator);
+			SpawnTestStation(TW.World, Director, EStationType::Filter);
+
+			const int32 Before = CountBuckets(TW.World);
+			Director->StartAllSourceCycles();
+			const int32 After = CountBuckets(TW.World);
+
+			TestEqual(TEXT("two buckets spawned (one per source node)"),
+				After - Before, 2);
+		});
+
+		It("dispatches one bucket on a single-source DAG (matches StartCycle behavior)", [this, SpawnTestStation, CountBuckets]()
+		{
+			AddExpectedError(TEXT("missing station or robot"),
+				EAutomationExpectedErrorFlags::Contains, /*ExpectedNumOccurrences=*/1);
+
+			FScopedTestWorld TW(TEXT("DirectorSpec_StartAllSources_SingleSource"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			const FNodeRef A{EStationType::Generator, 0};
+			const FNodeRef B{EStationType::Filter,    0};
+			Director->BuildLineDAG(FDAGBuilder().Source(A).Edge(A, B).Build());
+
+			SpawnTestStation(TW.World, Director, EStationType::Generator);
+
+			const int32 Before = CountBuckets(TW.World);
+			Director->StartAllSourceCycles();
+			const int32 After = CountBuckets(TW.World);
+
+			TestEqual(TEXT("exactly one bucket spawned"), After - Before, 1);
+		});
+	});
+
 	Describe("Fan-in dispatch (Story 31d — K > 1 predecessors)", [this]()
 	{
 		// Helper: spawn a test station with the given type set, register with Director.

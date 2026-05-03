@@ -133,6 +133,85 @@ void FAgentChatSubsystemSpec::Define()
 		});
 	});
 
+	Describe("OnDAGProposed (Story 32b — orchestrator dag broadcast)", [this]()
+	{
+		It("broadcasts OnDAGProposed with the parsed nodes when the Orchestrator's "
+		   "reply contains a `dag` field", [this]()
+		{
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Sub = NewObject<UAgentChatSubsystem>(GI);
+			TestNotNull(TEXT("subsystem instantiated"), Sub);
+			if (!Sub) return;
+
+			int32 BroadcastCount = 0;
+			TArray<FStationNode> CapturedNodes;
+			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>& Nodes)
+			{
+				++BroadcastCount;
+				CapturedNodes = Nodes;
+			});
+
+			// Synthesise a Claude reply matching the OrchestratorChatPromptTemplate
+			// contract: {"reply": "...", "dag": {"nodes": [...]}}
+			const FString FakeReply = TEXT(
+				"{\"reply\":\"On it.\",\"dag\":{\"nodes\":["
+				"{\"id\":\"g\",\"type\":\"Generator\",\"rule\":\"r1\"},"
+				"{\"id\":\"f\",\"type\":\"Filter\",\"rule\":\"r2\",\"parents\":[\"g\"]}"
+				"]}}");
+			Sub->HandleClaudeResponse(EStationType::Orchestrator, /*bSuccess=*/true, FakeReply);
+
+			TestEqual(TEXT("OnDAGProposed fired exactly once"), BroadcastCount, 1);
+			TestEqual(TEXT("captured 2 nodes"), CapturedNodes.Num(), 2);
+			if (CapturedNodes.Num() == 2)
+			{
+				TestTrue(TEXT("[0] is Generator/0"),
+					CapturedNodes[0].Ref == FNodeRef{EStationType::Generator, 0});
+				TestTrue(TEXT("[1] is Filter/0"),
+					CapturedNodes[1].Ref == FNodeRef{EStationType::Filter, 0});
+			}
+		});
+
+		It("does NOT broadcast OnDAGProposed when the Orchestrator's reply has "
+		   "`dag: null` (small-talk path)", [this]()
+		{
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Sub = NewObject<UAgentChatSubsystem>(GI);
+			if (!Sub) return;
+
+			int32 BroadcastCount = 0;
+			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>&)
+			{
+				++BroadcastCount;
+			});
+
+			Sub->HandleClaudeResponse(EStationType::Orchestrator, /*bSuccess=*/true,
+				TEXT("{\"reply\":\"hello there\",\"dag\":null}"));
+
+			TestEqual(TEXT("no broadcast for null dag"), BroadcastCount, 0);
+		});
+
+		It("does NOT broadcast OnDAGProposed for non-Orchestrator agents (their "
+		   "replies use the new_rule schema, not dag)", [this]()
+		{
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Sub = NewObject<UAgentChatSubsystem>(GI);
+			if (!Sub) return;
+
+			int32 BroadcastCount = 0;
+			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>&)
+			{
+				++BroadcastCount;
+			});
+
+			// Even if a Filter reply contained a dag-shaped field by accident,
+			// chat parsing for non-Orchestrator agents must not surface it.
+			Sub->HandleClaudeResponse(EStationType::Filter, /*bSuccess=*/true,
+				TEXT("{\"reply\":\"odd only\",\"dag\":{\"nodes\":[]}}"));
+
+			TestEqual(TEXT("Filter reply does not fire OnDAGProposed"), BroadcastCount, 0);
+		});
+	});
+
 	Describe("StopSpeaking (Story 26 — push-to-talk silences agents)", [this]()
 	{
 		It("clears the active-say-handles list so subsequent SpeakResponse calls "

@@ -30,8 +30,10 @@ public:
 	FOnActiveAgentChanged OnActiveAgentChanged;
 
 private:
-	bool bHasActive = false;
-	EStationType ActiveAgent = EStationType::Generator;
+	// Story 32b — default-active is the Orchestrator so the operator's first
+	// push-to-talk routes to it without needing a hail (mission-driven boot).
+	bool bHasActive = true;
+	EStationType ActiveAgent = EStationType::Orchestrator;
 
 	UPROPERTY()
 	TObjectPtr<UAgentChatSubsystem> ChatOverride;

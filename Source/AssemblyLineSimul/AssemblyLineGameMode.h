@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
 #include "AssemblyLineTypes.h"
+#include "DAG/AssemblyLineDAG.h"  // FStationNode (spawn-spec input)
 #include "AssemblyLineGameMode.generated.h"
 
 class UStaticMesh;
@@ -71,9 +72,20 @@ public:
 	UPROPERTY(EditAnywhere, Category = "AssemblyLine|Floor")
 	FVector FloorOffset = FVector(0.f, 0.f, 85.f);
 
-	// Spawns 4 stations + 4 workers + cinematic camera and registers them with the Director.
-	// Public so tests can drive without running the full BeginPlay path.
-	void SpawnAssemblyLine();
+	// Story 32b — boot path. Spawns exactly one AOrchestratorStation and
+	// registers it with the Director. No worker is spawned (the Orchestrator
+	// is chat-only). The line itself is materialized later via
+	// SpawnLineFromSpec when the Orchestrator returns a DAG.
+	void SpawnOrchestrator();
+
+	// Story 32b — mission path. Spawns one AStation (correct subclass per
+	// node Kind) + one AWorkerRobot per node, applies each node's rule,
+	// registers with the Director, and builds the DAG. Stations placed
+	// along X at LineOrigin + idx * StationSpacing in spec iteration order.
+	// Returns false (and spawns nothing) on: invalid DAG (cycle / unknown
+	// type / undeclared parent), or a spec containing duplicate kinds (v1
+	// constraint — see Story 32b AC32b.9).
+	bool SpawnLineFromSpec(const TArray<FStationNode>& Nodes);
 
 	// Spawns the FloorMesh under the line, centered + scaled by FloorScale.
 	// No-op when FloorMesh is unset. Public for tests.
@@ -104,4 +116,10 @@ private:
 	// Wires UVoiceSubsystem::OnActiveAgentChanged → station glow + affirmation TTS.
 	FDelegateHandle ActiveAgentChangedHandle;
 	void HandleActiveAgentChanged(EStationType Agent);
+
+	// Story 32b — handle for UAgentChatSubsystem::OnDAGProposed. Fired when
+	// the Orchestrator's chat reply yields a parsed DAG; the handler runs
+	// SpawnLineFromSpec → SpawnCinematicDirector → StartAllSourceCycles.
+	FDelegateHandle DAGProposedHandle;
+	void HandleDAGProposed(const TArray<FStationNode>& Nodes);
 };

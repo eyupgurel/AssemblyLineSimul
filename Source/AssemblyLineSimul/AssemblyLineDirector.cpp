@@ -54,6 +54,55 @@ AWorkerRobot* UAssemblyLineDirector::GetRobotForStation(EStationType Type) const
 	return GetRobot(Type);
 }
 
+void UAssemblyLineDirector::StartAllSourceCycles()
+{
+	// Story 32b — generalizes StartCycle for arbitrary spawned topologies.
+	// Iterate every source node in the DAG; spawn an empty bucket at each
+	// source station's input slot and dispatch. In a single-source DAG this
+	// collapses to one StartCycle call; in fan-in it kicks both branches so
+	// the merge gate fires once both arrive.
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	const TArray<FNodeRef> Sources = DAG.GetSourceNodes();
+	if (Sources.Num() == 0)
+	{
+		UE_LOG(LogAssemblyLine, Warning,
+			TEXT("StartAllSourceCycles: DAG has no source nodes."));
+		return;
+	}
+
+	UClass* Cls = BucketClass ? BucketClass.Get() : ABucket::StaticClass();
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	for (const FNodeRef& Src : Sources)
+	{
+		AStation* SrcStation = GetStation(Src.Kind);
+		if (!SrcStation)
+		{
+			UE_LOG(LogAssemblyLine, Warning,
+				TEXT("StartAllSourceCycles: source kind %d has no registered station."),
+				(int32)Src.Kind);
+			continue;
+		}
+
+		const FVector SpawnLoc = SrcStation->InputSlot
+			? SrcStation->InputSlot->GetComponentLocation()
+			: SrcStation->GetActorLocation();
+		ABucket* Bucket = World->SpawnActor<ABucket>(Cls, SpawnLoc, FRotator::ZeroRotator, Params);
+		if (!Bucket)
+		{
+			UE_LOG(LogAssemblyLine, Error,
+				TEXT("StartAllSourceCycles: failed to spawn bucket for kind %d."),
+				(int32)Src.Kind);
+			continue;
+		}
+
+		DispatchToStation(Src.Kind, Bucket, /*Source=*/nullptr);
+	}
+}
+
 void UAssemblyLineDirector::StartCycle()
 {
 	AStation* Generator = GetStation(EStationType::Generator);
