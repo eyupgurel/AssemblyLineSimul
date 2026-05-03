@@ -6,6 +6,7 @@
 #include "AssemblyLineDirector.h"
 #include "Bucket.h"
 #include "DAG/AssemblyLineDAG.h"
+#include "DAG/DAGBuilder.h"
 #include "Station.h"
 #include "TestStations.h"
 #include "WorkerRobot.h"
@@ -172,11 +173,8 @@ void FAssemblyLineDirectorSpec::Define()
 			const FNodeRef A{EStationType::Generator, 0};
 			const FNodeRef B{EStationType::Filter,    0};
 			const FNodeRef C{EStationType::Sorter,    0};
-			Director->BuildLineDAG({
-				FStationNode{A, FString(),    {}},
-				FStationNode{B, FString(),  {A}},
-				FStationNode{C, FString(),  {A}},
-			});
+			Director->BuildLineDAG(FDAGBuilder()
+				.Source(A).Edge(A, B).Edge(A, C).Build());
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -209,12 +207,8 @@ void FAssemblyLineDirectorSpec::Define()
 			const FNodeRef B{EStationType::Filter,    0};
 			const FNodeRef C{EStationType::Sorter,    0};
 			const FNodeRef D{EStationType::Checker,   0};
-			Director->BuildLineDAG({
-				FStationNode{A, FString(),    {}},
-				FStationNode{B, FString(),  {A}},
-				FStationNode{C, FString(),  {A}},
-				FStationNode{D, FString(),  {A}},
-			});
+			Director->BuildLineDAG(FDAGBuilder()
+				.Source(A).Edge(A, B).Edge(A, C).Edge(A, D).Build());
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -242,10 +236,8 @@ void FAssemblyLineDirectorSpec::Define()
 
 			const FNodeRef A{EStationType::Generator, 0};
 			const FNodeRef B{EStationType::Filter,    0};
-			Director->BuildLineDAG({
-				FStationNode{A, FString(),    {}},
-				FStationNode{B, FString(),  {A}},
-			});
+			Director->BuildLineDAG(FDAGBuilder()
+				.Source(A).Edge(A, B).Build());
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -297,11 +289,8 @@ void FAssemblyLineDirectorSpec::Define()
 			const FNodeRef A{EStationType::Generator, 0};
 			const FNodeRef B{EStationType::Filter,    0};
 			const FNodeRef C{EStationType::Sorter,    0};
-			Director->BuildLineDAG({
-				FStationNode{A, FString(),    {}},
-				FStationNode{B, FString(),    {}},
-				FStationNode{C, FString(), {A, B}},
-			});
+			Director->BuildLineDAG(FDAGBuilder()
+				.Source(A).Source(B).Edge(A, C).Edge(B, C).Build());
 
 			ATestSyncStation* StationC = SpawnTestStation(TW.World, Director, EStationType::Sorter);
 			TestNotNull(TEXT("Sorter test station spawned + registered"), StationC);
@@ -350,11 +339,8 @@ void FAssemblyLineDirectorSpec::Define()
 			const FNodeRef A{EStationType::Generator, 0};
 			const FNodeRef B{EStationType::Filter,    0};
 			const FNodeRef C{EStationType::Sorter,    0};
-			Director->BuildLineDAG({
-				FStationNode{A, FString(),    {}},
-				FStationNode{B, FString(),    {}},
-				FStationNode{C, FString(), {A, B}},
-			});
+			Director->BuildLineDAG(FDAGBuilder()
+				.Source(A).Source(B).Edge(A, C).Edge(B, C).Build());
 
 			ATestSyncStation* StationC = SpawnTestStation(TW.World, Director, EStationType::Sorter);
 			if (!StationC) return;

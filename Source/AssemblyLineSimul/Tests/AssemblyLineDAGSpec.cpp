@@ -4,21 +4,11 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "DAG/AssemblyLineDAG.h"
+#include "DAG/DAGBuilder.h"
 #include "AssemblyLineTypes.h"
 
 namespace AssemblyLineDAGTests
 {
-	// Shorthand to construct a node with parents in one expression.
-	FStationNode MakeNode(EStationType Kind, int32 Instance, const FString& Rule,
-		std::initializer_list<FNodeRef> ParentList)
-	{
-		FStationNode N;
-		N.Ref = FNodeRef{Kind, Instance};
-		N.Rule = Rule;
-		N.Parents.Append(ParentList);
-		return N;
-	}
-
 	// Linear 4-node DAG matching today's hardcoded chain. The shape that
 	// AC31a.1 (regression net) depends on.
 	TArray<FStationNode> MakeLinearChain()
@@ -27,12 +17,12 @@ namespace AssemblyLineDAGTests
 		const FNodeRef F{EStationType::Filter,    0};
 		const FNodeRef S{EStationType::Sorter,    0};
 		const FNodeRef C{EStationType::Checker,   0};
-		return {
-			MakeNode(EStationType::Generator, 0, TEXT("Generate"),     {}),
-			MakeNode(EStationType::Filter,    0, TEXT("Filter primes"), {G}),
-			MakeNode(EStationType::Sorter,    0, TEXT("Ascending"),    {F}),
-			MakeNode(EStationType::Checker,   0, TEXT("Verify"),       {S}),
-		};
+		return FDAGBuilder()
+			.Source(G, TEXT("Generate"))
+			.Edge(G, F, TEXT("Filter primes"))
+			.Edge(F, S, TEXT("Ascending"))
+			.Edge(S, C, TEXT("Verify"))
+			.Build();
 	}
 }
 
@@ -67,10 +57,10 @@ void FAssemblyLineDAGSpec::Define()
 
 			const FNodeRef A{EStationType::Generator, 0};
 			const FNodeRef B{EStationType::Filter,    0};
-			TArray<FStationNode> Cyclic = {
-				MakeNode(EStationType::Generator, 0, TEXT(""), {B}),
-				MakeNode(EStationType::Filter,    0, TEXT(""), {A}),
-			};
+			const TArray<FStationNode> Cyclic = FDAGBuilder()
+				.Edge(B, A)  // A's parent is B
+				.Edge(A, B)  // B's parent is A — cycle
+				.Build();
 
 			FAssemblyLineDAG DAG;
 			TestFalse(TEXT("cyclic build returns false"), DAG.BuildFromDAG(Cyclic));
@@ -84,11 +74,11 @@ void FAssemblyLineDAGSpec::Define()
 			const FNodeRef A{EStationType::Generator, 0};
 			const FNodeRef B{EStationType::Filter,    0};
 			const FNodeRef C{EStationType::Sorter,    0};
-			TArray<FStationNode> Cyclic = {
-				MakeNode(EStationType::Generator, 0, TEXT(""), {C}),
-				MakeNode(EStationType::Filter,    0, TEXT(""), {A}),
-				MakeNode(EStationType::Sorter,    0, TEXT(""), {B}),
-			};
+			const TArray<FStationNode> Cyclic = FDAGBuilder()
+				.Edge(C, A)  // A's parent is C
+				.Edge(A, B)  // B's parent is A
+				.Edge(B, C)  // C's parent is B — cycle
+				.Build();
 
 			FAssemblyLineDAG DAG;
 			TestFalse(TEXT("3-cycle build returns false"), DAG.BuildFromDAG(Cyclic));
@@ -122,11 +112,11 @@ void FAssemblyLineDAGSpec::Define()
 		It("on a fork (A -> B, A -> C): A is the source; B and C are terminals", [this]()
 		{
 			const FNodeRef A{EStationType::Generator, 0};
-			TArray<FStationNode> Fork = {
-				MakeNode(EStationType::Generator, 0, TEXT(""), {}),
-				MakeNode(EStationType::Filter,    0, TEXT(""), {A}),
-				MakeNode(EStationType::Sorter,    0, TEXT(""), {A}),
-			};
+			const FNodeRef B{EStationType::Filter,    0};
+			const FNodeRef C{EStationType::Sorter,    0};
+			const TArray<FStationNode> Fork = FDAGBuilder()
+				.Source(A).Edge(A, B).Edge(A, C).Build();
+
 			FAssemblyLineDAG DAG;
 			DAG.BuildFromDAG(Fork);
 
@@ -138,11 +128,10 @@ void FAssemblyLineDAGSpec::Define()
 		{
 			const FNodeRef A{EStationType::Generator, 0};
 			const FNodeRef B{EStationType::Filter,    0};
-			TArray<FStationNode> Merge = {
-				MakeNode(EStationType::Generator, 0, TEXT(""), {}),
-				MakeNode(EStationType::Filter,    0, TEXT(""), {}),
-				MakeNode(EStationType::Sorter,    0, TEXT(""), {A, B}),
-			};
+			const FNodeRef C{EStationType::Sorter,    0};
+			const TArray<FStationNode> Merge = FDAGBuilder()
+				.Source(A).Source(B).Edge(A, C).Edge(B, C).Build();
+
 			FAssemblyLineDAG DAG;
 			DAG.BuildFromDAG(Merge);
 
@@ -174,12 +163,9 @@ void FAssemblyLineDAGSpec::Define()
 			const FNodeRef A{EStationType::Generator, 0};
 			const FNodeRef B{EStationType::Filter,    0};
 			const FNodeRef C{EStationType::Sorter,    0};
-			TArray<FStationNode> ForkMerge = {
-				MakeNode(EStationType::Generator, 0, TEXT(""), {}),
-				MakeNode(EStationType::Filter,    0, TEXT(""), {A}),
-				MakeNode(EStationType::Sorter,    0, TEXT(""), {A}),
-				MakeNode(EStationType::Checker,   0, TEXT(""), {B, C}),
-			};
+			const FNodeRef D{EStationType::Checker,   0};
+			const TArray<FStationNode> ForkMerge = FDAGBuilder()
+				.Source(A).Edge(A, B).Edge(A, C).Edge(B, D).Edge(C, D).Build();
 			FAssemblyLineDAG DAG;
 			DAG.BuildFromDAG(ForkMerge);
 
@@ -233,11 +219,10 @@ void FAssemblyLineDAGSpec::Define()
 		It("on a fork: Generator has both Filter and Sorter as successors", [this]()
 		{
 			const FNodeRef A{EStationType::Generator, 0};
-			TArray<FStationNode> Fork = {
-				MakeNode(EStationType::Generator, 0, TEXT(""), {}),
-				MakeNode(EStationType::Filter,    0, TEXT(""), {A}),
-				MakeNode(EStationType::Sorter,    0, TEXT(""), {A}),
-			};
+			const FNodeRef B{EStationType::Filter,    0};
+			const FNodeRef C{EStationType::Sorter,    0};
+			const TArray<FStationNode> Fork = FDAGBuilder()
+				.Source(A).Edge(A, B).Edge(A, C).Build();
 			FAssemblyLineDAG DAG;
 			DAG.BuildFromDAG(Fork);
 
