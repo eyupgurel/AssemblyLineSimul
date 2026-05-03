@@ -78,8 +78,15 @@ FString UAgentChatSubsystem::BuildPromptForStation(EStationType StationType, con
 		}
 	}
 
+	// Story 32a — Orchestrator uses a different prompt template that asks
+	// for {"reply", "dag"} instead of {"reply", "new_rule"}. Per-purpose
+	// template; chat-side parsing in 32b will switch on the same enum.
+	const FString TemplateSection = (StationType == EStationType::Orchestrator)
+		? TEXT("OrchestratorChatPromptTemplate")
+		: TEXT("ChatPromptTemplate");
+
 	return AgentPromptLibrary::FormatPrompt(
-		AgentPromptLibrary::LoadChatSection(TEXT("ChatPromptTemplate")),
+		AgentPromptLibrary::LoadChatSection(TemplateSection),
 		{
 			{TEXT("agent"),   Name},
 			{TEXT("role"),    Role},
@@ -250,10 +257,11 @@ FString UAgentChatSubsystem::StationTypeName(EStationType StationType) const
 {
 	switch (StationType)
 	{
-	case EStationType::Generator: return TEXT("Generator");
-	case EStationType::Filter:    return TEXT("Filter");
-	case EStationType::Sorter:    return TEXT("Sorter");
-	case EStationType::Checker:   return TEXT("Checker");
-	default:                      return TEXT("Unknown");
+	case EStationType::Generator:    return TEXT("Generator");
+	case EStationType::Filter:       return TEXT("Filter");
+	case EStationType::Sorter:       return TEXT("Sorter");
+	case EStationType::Checker:      return TEXT("Checker");
+	case EStationType::Orchestrator: return TEXT("Orchestrator");
+	default:                         return TEXT("Unknown");
 	}
 }

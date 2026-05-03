@@ -506,3 +506,13 @@ void ACheckerStation::HandleVerdictReply(bool bSuccess, const FString& Response,
 	}
 	OnComplete.ExecuteIfBound(R);
 }
+
+// ---- Orchestrator -------------------------------------------------------------
+
+AOrchestratorStation::AOrchestratorStation()
+{
+	StationType = EStationType::Orchestrator;
+	DisplayName = TEXT("ORCHESTRATOR");
+	CurrentRule = AgentPromptLibrary::LoadAgentSection(
+		EStationType::Orchestrator, TEXT("DefaultRule"));
+}

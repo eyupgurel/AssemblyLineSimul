@@ -73,3 +73,15 @@ public:
 	virtual FString GetEffectiveRule() const override;
 	virtual void OnRuleSetByChat() override;
 };
+
+// Story 32a — chat-only meta agent. Receives the operator's mission at boot
+// and emits a DAG spec describing the line to spawn (parsed by
+// OrchestratorParser). Never appears in a station's processing chain — its
+// inherited ProcessBucket is unreachable.
+UCLASS()
+class ASSEMBLYLINESIMUL_API AOrchestratorStation : public AStation
+{
+	GENERATED_BODY()
+public:
+	AOrchestratorStation();
+};

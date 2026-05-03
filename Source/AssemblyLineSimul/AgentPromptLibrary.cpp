@@ -16,10 +16,11 @@ namespace
 	{
 		switch (Agent)
 		{
-		case EStationType::Generator: return TEXT("Generator.md");
-		case EStationType::Filter:    return TEXT("Filter.md");
-		case EStationType::Sorter:    return TEXT("Sorter.md");
-		case EStationType::Checker:   return TEXT("Checker.md");
+		case EStationType::Generator:    return TEXT("Generator.md");
+		case EStationType::Filter:       return TEXT("Filter.md");
+		case EStationType::Sorter:       return TEXT("Sorter.md");
+		case EStationType::Checker:      return TEXT("Checker.md");
+		case EStationType::Orchestrator: return TEXT("Orchestrator.md");
 		}
 		return TEXT("");
 	}
