@@ -3,6 +3,7 @@
 #include "AgentPromptLibrary.h"
 #include "AssemblyLineDirector.h"
 #include "AssemblyLineFeedback.h"
+#include "Bucket.h"
 #include "CinematicCameraDirector.h"
 #include "MacAudioCapture.h"
 #include "OpenAIAPISubsystem.h"
@@ -10,6 +11,7 @@
 #include "StationSubclasses.h"
 #include "VoiceSubsystem.h"
 #include "WorkerRobot.h"
+#include "EngineUtils.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -31,6 +33,63 @@ AAssemblyLineGameMode::AAssemblyLineGameMode()
 {
 	// Default game mode pawn/controller is fine; demo robots are spawned separately
 	// and are not possessed by the player.
+}
+
+void AAssemblyLineGameMode::ClearExistingLine()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// Collect first, destroy second — TActorIterator doesn't like
+	// concurrent modification.
+	TArray<AActor*> ToDestroy;
+
+	for (TActorIterator<AStation> It(World); It; ++It)
+	{
+		AStation* S = *It;
+		if (!IsValid(S)) continue;
+		// Orchestrator survives across re-missioning (chat-only meta agent).
+		if (S->IsA(AOrchestratorStation::StaticClass())) continue;
+		ToDestroy.Add(S);
+	}
+	for (TActorIterator<AWorkerRobot> It(World); It; ++It)
+	{
+		if (IsValid(*It)) ToDestroy.Add(*It);
+	}
+	for (TActorIterator<ABucket> It(World); It; ++It)
+	{
+		if (IsValid(*It)) ToDestroy.Add(*It);
+	}
+	for (TActorIterator<ACinematicCameraDirector> It(World); It; ++It)
+	{
+		if (IsValid(*It)) ToDestroy.Add(*It);
+	}
+	for (TActorIterator<AAssemblyLineFeedback> It(World); It; ++It)
+	{
+		if (IsValid(*It)) ToDestroy.Add(*It);
+	}
+
+	for (AActor* A : ToDestroy)
+	{
+		if (IsValid(A)) A->Destroy();
+	}
+
+	// Wipe all four production-kind .md overrides so a kind present in the
+	// previous mission but absent in the next can't keep serving stale Role
+	// content. Orchestrator never had one (out of scope per Story 33b).
+	const FString SavedAgentsDir = FPaths::ProjectSavedDir() / TEXT("Agents");
+	for (const TCHAR* Filename : {TEXT("Generator.md"), TEXT("Filter.md"),
+		TEXT("Sorter.md"), TEXT("Checker.md")})
+	{
+		IFileManager::Get().Delete(*(SavedAgentsDir / Filename));
+	}
+
+	// Reset director's bookkeeping (StationByType, RobotByStation,
+	// WaitingFor, InboundBuckets, DAG) and cancel pending timers.
+	if (UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>())
+	{
+		Director->ClearLineState();
+	}
 }
 
 void AAssemblyLineGameMode::WriteOrchestratorAuthoredPrompts(
@@ -745,6 +804,11 @@ void AAssemblyLineGameMode::HandleDAGProposed(const TArray<FStationNode>& Nodes,
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return;
 
+	// Story 34 — atomic re-missioning teardown. Destroys actors from any
+	// previous mission, wipes stale Saved/Agents/, resets Director state +
+	// timers. No-op on a fresh boot world.
+	ClearExistingLine();
+
 	// Story 33b — write Orchestrator-authored prompts to Saved/Agents/
 	// BEFORE spawning so the spawned stations pick them up via the
 	// Saved-beats-Content loader precedence. Cache invalidation forces a
@@ -763,6 +827,9 @@ void AAssemblyLineGameMode::HandleDAGProposed(const TArray<FStationNode>& Nodes,
 	}
 
 	SpawnCinematicDirector();
+	// Story 34 — re-spawn feedback so it re-binds to the new Director events
+	// (the prior actor was destroyed in ClearExistingLine).
+	SpawnFeedback();
 
 	// Brief pause so the camera has time to settle on the wide overview
 	// before the first bucket appears at the source dock — same vibe as

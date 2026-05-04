@@ -54,6 +54,36 @@ AWorkerRobot* UAssemblyLineDirector::GetRobotForStation(EStationType Type) const
 	return GetRobot(Type);
 }
 
+void UAssemblyLineDirector::ClearLineState()
+{
+	// Preserve the Orchestrator entry — it's the chat-only meta agent that
+	// survives across re-missioning so the operator's conversation
+	// continues unbroken.
+	TObjectPtr<AStation> OrchEntry;
+	if (TObjectPtr<AStation>* Found = StationByType.Find(EStationType::Orchestrator))
+	{
+		OrchEntry = *Found;
+	}
+	StationByType.Reset();
+	if (OrchEntry)
+	{
+		StationByType.Add(EStationType::Orchestrator, OrchEntry);
+	}
+
+	RobotByStation.Reset();
+	WaitingFor.Reset();
+	InboundBuckets.Reset();
+	DAG = FAssemblyLineDAG{};
+
+	// Cancel any timer the Director scheduled (recycle, auto-loop). Works
+	// because Story 34 also moved those timers from CreateLambda to
+	// CreateWeakLambda(this, ...) so the engine tracks ownership.
+	if (UWorld* W = GetWorld())
+	{
+		W->GetTimerManager().ClearAllTimersForObject(this);
+	}
+}
+
 void UAssemblyLineDirector::StartAllSourceCycles()
 {
 	// Story 32b — generalizes StartCycle for arbitrary spawned topologies.
@@ -184,8 +214,10 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 		if (World)
 		{
 			FTimerHandle Th;
+			// Story 34 — CreateWeakLambda binds to `this` so
+			// ClearAllTimersForObject(Director) cancels it on re-missioning.
 			World->GetTimerManager().SetTimer(Th,
-				FTimerDelegate::CreateLambda([this, Bucket]()
+				FTimerDelegate::CreateWeakLambda(this, [this, Bucket]()
 				{
 					if (Bucket && IsValid(Bucket)) Bucket->Destroy();
 					StartCycle();
@@ -209,8 +241,10 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 			if (bAutoLoop)
 			{
 				FTimerHandle Th;
+				// Story 34 — CreateWeakLambda enables ClearAllTimersForObject
+				// to cancel this on re-missioning.
 				GetWorld()->GetTimerManager().SetTimer(Th,
-					FTimerDelegate::CreateLambda([this, Bucket]()
+					FTimerDelegate::CreateWeakLambda(this, [this, Bucket]()
 					{
 						if (Bucket && IsValid(Bucket)) Bucket->Destroy();
 						StartCycle();

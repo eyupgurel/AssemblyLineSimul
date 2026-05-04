@@ -255,6 +255,197 @@ void FAssemblyLineDirectorSpec::Define()
 		});
 	});
 
+	Describe("ClearLineState (Story 34 — re-missioning teardown)", [this]()
+	{
+		auto SpawnTestStation = [](UWorld* World, UAssemblyLineDirector* Director,
+			EStationType Type) -> ATestSyncStation*
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ATestSyncStation* S = World->SpawnActor<ATestSyncStation>(
+				ATestSyncStation::StaticClass(),
+				FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (S)
+			{
+				S->StationType = Type;
+				Director->RegisterStation(S);
+			}
+			return S;
+		};
+
+		It("empties StationByType except for the Orchestrator entry", [this, SpawnTestStation]()
+		{
+			FScopedTestWorld TW(TEXT("DirectorSpec_ClearLineState_Stations"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			ATestSyncStation* Orch = SpawnTestStation(TW.World, Director, EStationType::Orchestrator);
+			SpawnTestStation(TW.World, Director, EStationType::Generator);
+			SpawnTestStation(TW.World, Director, EStationType::Filter);
+			SpawnTestStation(TW.World, Director, EStationType::Sorter);
+			SpawnTestStation(TW.World, Director, EStationType::Checker);
+
+			Director->ClearLineState();
+
+			TestEqual(TEXT("Orchestrator entry preserved"),
+				Director->GetStationOfType(EStationType::Orchestrator), (AStation*)Orch);
+			TestNull(TEXT("Generator entry cleared"),
+				Director->GetStationOfType(EStationType::Generator));
+			TestNull(TEXT("Filter entry cleared"),
+				Director->GetStationOfType(EStationType::Filter));
+			TestNull(TEXT("Sorter entry cleared"),
+				Director->GetStationOfType(EStationType::Sorter));
+			TestNull(TEXT("Checker entry cleared"),
+				Director->GetStationOfType(EStationType::Checker));
+		});
+
+		It("empties RobotByStation entirely", [this, SpawnTestStation]()
+		{
+			FScopedTestWorld TW(TEXT("DirectorSpec_ClearLineState_Robots"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			ATestSyncStation* GenStation = SpawnTestStation(TW.World, Director, EStationType::Generator);
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AWorkerRobot* Robot = TW.World->SpawnActor<AWorkerRobot>(
+				AWorkerRobot::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			Robot->AssignStation(GenStation);
+			Director->RegisterRobot(Robot);
+
+			TestNotNull(TEXT("worker registered before clear"),
+				Director->GetRobotForStation(EStationType::Generator));
+
+			Director->ClearLineState();
+
+			TestNull(TEXT("worker entry cleared"),
+				Director->GetRobotForStation(EStationType::Generator));
+		});
+
+		It("resets the DAG to NumNodes == 0", [this]()
+		{
+			FScopedTestWorld TW(TEXT("DirectorSpec_ClearLineState_DAG"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			const FNodeRef Gen{EStationType::Generator, 0};
+			const FNodeRef Flt{EStationType::Filter,    0};
+			Director->BuildLineDAG(FDAGBuilder().Source(Gen).Edge(Gen, Flt).Build());
+			TestEqual(TEXT("DAG has 2 nodes pre-clear"),
+				Director->GetDAG().NumNodes(), 2);
+
+			Director->ClearLineState();
+
+			TestEqual(TEXT("DAG empty after clear"),
+				Director->GetDAG().NumNodes(), 0);
+		});
+
+		It("empties WaitingFor and InboundBuckets via the public fan-in path", [this, SpawnTestStation]()
+		{
+			// Drive a partial fan-in (one parent arrives, second pending)
+			// then clear; subsequent fan-in cycle on a fresh DAG should
+			// behave correctly with no stale buckets in the queue. No
+			// dispatch warnings expected — every arrival in this test
+			// stays queued (single arrival on a 2-parent fan-in).
+
+			FScopedTestWorld TW(TEXT("DirectorSpec_ClearLineState_FanInGate"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			const FNodeRef Gen{EStationType::Generator, 0};
+			const FNodeRef Flt{EStationType::Filter,    0};
+			const FNodeRef Srt{EStationType::Sorter,    0};
+			Director->BuildLineDAG(FDAGBuilder()
+				.Source(Gen).Source(Flt).Edge(Gen, Srt).Edge(Flt, Srt).Build());
+
+			ATestSyncStation* SrtStation = SpawnTestStation(TW.World, Director, EStationType::Sorter);
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ABucket* B1 = TW.World->SpawnActor<ABucket>(
+				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			B1->Contents = {1};
+			Director->OnRobotDoneAt(EStationType::Generator, B1);
+
+			TestEqual(TEXT("merge not yet fired (still waiting for Filter)"),
+				SrtStation->ProcessCallCount, 0);
+
+			Director->ClearLineState();
+
+			// Re-arm DAG fresh; second arrival from a NEW cycle should not
+			// pick up the stale Generator-arrival queued before clear.
+			Director->BuildLineDAG(FDAGBuilder()
+				.Source(Gen).Source(Flt).Edge(Gen, Srt).Edge(Flt, Srt).Build());
+			SpawnTestStation(TW.World, Director, EStationType::Sorter);
+
+			ABucket* B2 = TW.World->SpawnActor<ABucket>(
+				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			B2->Contents = {2};
+			Director->OnRobotDoneAt(EStationType::Filter, B2);
+
+			// If WaitingFor wasn't cleared, this single arrival would fire
+			// the merge (because Generator was already removed from the
+			// stale wait set). With a clean state, it shouldn't fire yet.
+			ATestSyncStation* FreshSrt = (ATestSyncStation*)Director->GetStationOfType(EStationType::Sorter);
+			if (!FreshSrt) return;
+			TestEqual(TEXT("post-clear: single arrival on fresh fan-in does NOT fire merge"),
+				FreshSrt->ProcessCallCount, 0);
+		});
+
+		It("cancels Director-scheduled timers — recycle/autoloop don't fire post-clear", [this]()
+		{
+			FScopedTestWorld TW(TEXT("DirectorSpec_ClearLineState_TimersCancelled"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			// Make recycle delay tiny so we can tick past it quickly.
+			Director->DelayBetweenCycles = 0.05f;
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ABucket* EmptyBucket = TW.World->SpawnActor<ABucket>(
+				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			TestEqual(TEXT("bucket starts empty"), EmptyBucket->Contents.Num(), 0);
+
+			// Trigger the recycle timer (non-Generator + empty bucket path).
+			Director->OnRobotDoneAt(EStationType::Filter, EmptyBucket);
+
+			// Clear immediately — the recycle timer's lambda should never fire.
+			Director->ClearLineState();
+
+			// Tick the world past the timer's delay.
+			TW.World->Tick(LEVELTICK_All, 0.2f);
+
+			// If the timer fired, Director->StartCycle would have been called,
+			// which destroys the bucket and tries to spawn a new one. Bucket
+			// destruction is the simplest signal — if the recycle fired, the
+			// bucket is gone (Destroy was called inside the lambda).
+			// Conversely, if ClearLineState cancelled the timer, the bucket
+			// from the OnRobotDoneAt frame stays valid (the test fixture
+			// owns the world; nothing else destroys it).
+			//
+			// NOTE: OnRobotDoneAt ALSO destroys the bucket inside the recycle
+			// lambda. If timer cancelled, lambda doesn't run, bucket stays.
+			TestTrue(TEXT("bucket still valid post-clear (recycle timer cancelled)"),
+				IsValid(EmptyBucket));
+		});
+
+		It("preserves the Orchestrator station registration across clear", [this, SpawnTestStation]()
+		{
+			FScopedTestWorld TW(TEXT("DirectorSpec_ClearLineState_OrchestratorPreserved"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			ATestSyncStation* Orch = SpawnTestStation(TW.World, Director, EStationType::Orchestrator);
+
+			Director->ClearLineState();
+
+			AStation* Found = Director->GetStationOfType(EStationType::Orchestrator);
+			TestEqual(TEXT("Orchestrator survives clear"), Found, (AStation*)Orch);
+			TestTrue(TEXT("Orchestrator actor still valid"), IsValid(Found));
+		});
+	});
+
 	Describe("StartAllSourceCycles (Story 32b — multi-source dispatch)", [this]()
 	{
 		auto SpawnTestStation = [](UWorld* World, UAssemblyLineDirector* Director,

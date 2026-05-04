@@ -92,6 +92,15 @@ public:
 	// no engine deps.
 	const FAssemblyLineDAG& GetDAG() const { return DAG; }
 
+	// Story 34 — re-missioning teardown. Empties StationByType (except the
+	// Orchestrator entry), RobotByStation, WaitingFor, InboundBuckets;
+	// resets the held DAG to empty; cancels every timer the Director
+	// scheduled via TimerManager::ClearAllTimersForObject(this). Called by
+	// AAssemblyLineGameMode::ClearExistingLine before SpawnLineFromSpec
+	// re-builds.
+	UFUNCTION(BlueprintCallable, Category = "AssemblyLine")
+	void ClearLineState();
+
 private:
 	UPROPERTY()
 	TMap<EStationType, TObjectPtr<AStation>> StationByType;

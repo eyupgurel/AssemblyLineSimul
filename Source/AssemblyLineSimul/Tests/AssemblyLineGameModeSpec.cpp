@@ -6,8 +6,10 @@
 #include "AgentChatSubsystem.h"
 #include "AgentPromptLibrary.h"
 #include "AssemblyLineDirector.h"
+#include "AssemblyLineFeedback.h"
 #include "AssemblyLineGameMode.h"
 #include "AssemblyLineTypes.h"
+#include "Bucket.h"
 #include "CinematicCameraDirector.h"
 #include "DAG/AssemblyLineDAG.h"
 #include "Engine/GameInstance.h"
@@ -405,6 +407,443 @@ void FAssemblyLineGameModeSpec::Define()
 				TestTrue(TEXT("tile mesh is the assigned FloorMesh"),
 					Smc->GetStaticMesh() == TestMesh);
 			}
+		});
+	});
+
+	Describe("ClearExistingLine (Story 34 — re-missioning teardown)", [this]()
+	{
+		// Build a fully-populated line for the tests in this Describe.
+		auto SpawnFullLine = [](UWorld* World, AAssemblyLineGameMode* GM)
+		{
+			GM->SpawnOrchestrator();
+			GM->SpawnLineFromSpec(LegacyFourStationSpec());
+			GM->SpawnCinematicDirector();
+			GM->SpawnFeedback();
+		};
+
+		auto CountActorsByPredicate = [](UWorld* World,
+			TFunctionRef<bool(AActor*)> Pred) -> int32
+		{
+			int32 N = 0;
+			for (TActorIterator<AActor> It(World); It; ++It)
+			{
+				if (IsValid(*It) && Pred(*It)) ++N;
+			}
+			return N;
+		};
+
+		It("destroys all non-Orchestrator stations", [this, SpawnFullLine]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_Clear_Stations"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			SpawnFullLine(TW.World, GM);
+
+			TestEqual(TEXT("4 production stations + 1 orchestrator pre-clear"),
+				CountAllStations(TW.World), 5);
+
+			GM->ClearExistingLine();
+
+			// Only the Orchestrator survives.
+			int32 ProductionStations = 0;
+			int32 OrchStations = 0;
+			for (TActorIterator<AStation> It(TW.World); It; ++It)
+			{
+				if (!IsValid(*It)) continue;
+				if (It->IsA(AOrchestratorStation::StaticClass())) ++OrchStations;
+				else ++ProductionStations;
+			}
+			TestEqual(TEXT("zero production stations remain"), ProductionStations, 0);
+			TestEqual(TEXT("Orchestrator station survives"), OrchStations, 1);
+		});
+
+		It("destroys all worker robots", [this, SpawnFullLine]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_Clear_Workers"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			SpawnFullLine(TW.World, GM);
+
+			int32 WorkersBefore = 0;
+			for (TActorIterator<AWorkerRobot> It(TW.World); It; ++It) { ++WorkersBefore; }
+			TestEqual(TEXT("4 workers pre-clear"), WorkersBefore, 4);
+
+			GM->ClearExistingLine();
+
+			int32 WorkersAfter = 0;
+			for (TActorIterator<AWorkerRobot> It(TW.World); It; ++It)
+			{
+				if (IsValid(*It)) ++WorkersAfter;
+			}
+			TestEqual(TEXT("zero workers post-clear"), WorkersAfter, 0);
+		});
+
+		It("destroys every bucket in the world (in-flight or idle)", [this, SpawnFullLine]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_Clear_Buckets"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			SpawnFullLine(TW.World, GM);
+
+			// Spawn three "in-flight" buckets that the previous mission's
+			// workers might have been carrying.
+			for (int32 i = 0; i < 3; ++i)
+			{
+				ABucket* B = TW.World->SpawnActor<ABucket>(
+					ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+				B->Contents = {i};
+			}
+
+			int32 BucketsBefore = 0;
+			for (TActorIterator<ABucket> It(TW.World); It; ++It) { ++BucketsBefore; }
+			TestEqual(TEXT("3 buckets pre-clear"), BucketsBefore, 3);
+
+			GM->ClearExistingLine();
+
+			int32 BucketsAfter = 0;
+			for (TActorIterator<ABucket> It(TW.World); It; ++It)
+			{
+				if (IsValid(*It)) ++BucketsAfter;
+			}
+			TestEqual(TEXT("zero buckets post-clear"), BucketsAfter, 0);
+		});
+
+		It("destroys the cinematic camera director", [this, SpawnFullLine]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_Clear_Cinematic"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			SpawnFullLine(TW.World, GM);
+
+			int32 CinBefore = 0;
+			for (TActorIterator<ACinematicCameraDirector> It(TW.World); It; ++It) { ++CinBefore; }
+			TestEqual(TEXT("1 cinematic pre-clear"), CinBefore, 1);
+
+			GM->ClearExistingLine();
+
+			int32 CinAfter = 0;
+			for (TActorIterator<ACinematicCameraDirector> It(TW.World); It; ++It)
+			{
+				if (IsValid(*It)) ++CinAfter;
+			}
+			TestEqual(TEXT("zero cinematics post-clear"), CinAfter, 0);
+		});
+
+		It("destroys the feedback actor", [this, SpawnFullLine]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_Clear_Feedback"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			SpawnFullLine(TW.World, GM);
+
+			int32 FbBefore = 0;
+			for (TActorIterator<AAssemblyLineFeedback> It(TW.World); It; ++It) { ++FbBefore; }
+			TestEqual(TEXT("1 feedback pre-clear"), FbBefore, 1);
+
+			GM->ClearExistingLine();
+
+			int32 FbAfter = 0;
+			for (TActorIterator<AAssemblyLineFeedback> It(TW.World); It; ++It)
+			{
+				if (IsValid(*It)) ++FbAfter;
+			}
+			TestEqual(TEXT("zero feedbacks post-clear"), FbAfter, 0);
+		});
+
+		It("preserves AssemblyLineFloor-tagged static mesh actors", [this]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_Clear_FloorPreserved"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnOrchestrator();
+
+			// Spawn a tagged "floor" tile by hand (avoids the FloorMesh
+			// dependency). Tag is what GameMode uses to identify floor.
+			AStaticMeshActor* Tile = TW.World->SpawnActor<AStaticMeshActor>(
+				AStaticMeshActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			Tile->Tags.AddUnique(TEXT("AssemblyLineFloor"));
+
+			GM->ClearExistingLine();
+
+			TestTrue(TEXT("floor tile actor still valid post-clear"),
+				IsValid(Tile));
+		});
+
+		It("is a no-op on a fresh boot world (only Orchestrator + no other line state)", [this]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_Clear_NoOp"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnOrchestrator();
+
+			TestEqual(TEXT("only Orchestrator pre-clear"),
+				CountAllStations(TW.World), 1);
+
+			// Should not crash, should not destroy the Orchestrator.
+			GM->ClearExistingLine();
+
+			TestEqual(TEXT("Orchestrator still present"),
+				CountStationsByClass(TW.World, AOrchestratorStation::StaticClass()), 1);
+			TestEqual(TEXT("no other stations appeared/disappeared"),
+				CountAllStations(TW.World), 1);
+		});
+
+		It("wipes stale Saved/Agents/<Kind>.md for all four production kinds", [this]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_Clear_WipesSavedAgents"));
+
+			// Pre-seed Saved/Agents/ with four files as if a prior mission
+			// had written them.
+			const FString SavedAgentsDir = FPaths::ProjectSavedDir() / TEXT("Agents");
+			IFileManager::Get().MakeDirectory(*SavedAgentsDir, /*Tree=*/true);
+			const TArray<FString> Files = {
+				SavedAgentsDir / TEXT("Generator.md"),
+				SavedAgentsDir / TEXT("Filter.md"),
+				SavedAgentsDir / TEXT("Sorter.md"),
+				SavedAgentsDir / TEXT("Checker.md"),
+			};
+			for (const FString& Path : Files)
+			{
+				FFileHelper::SaveStringToFile(TEXT("# stale\n"), *Path);
+				TestTrue(TEXT("seeded file exists"),
+					IFileManager::Get().FileExists(*Path));
+			}
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnOrchestrator();
+			GM->ClearExistingLine();
+
+			for (const FString& Path : Files)
+			{
+				TestFalse(TEXT("stale Saved/Agents/ file deleted"),
+					IFileManager::Get().FileExists(*Path));
+			}
+
+			AgentPromptLibrary::InvalidateCache();
+		});
+	});
+
+	Describe("HandleDAGProposed re-missioning (Story 34)", [this]()
+	{
+		auto SavedAgentMdPath = [](EStationType Kind) -> FString
+		{
+			const TCHAR* Filename = TEXT("");
+			switch (Kind)
+			{
+			case EStationType::Generator: Filename = TEXT("Generator.md"); break;
+			case EStationType::Filter:    Filename = TEXT("Filter.md");    break;
+			case EStationType::Sorter:    Filename = TEXT("Sorter.md");    break;
+			case EStationType::Checker:   Filename = TEXT("Checker.md");   break;
+			default: break;
+			}
+			return FPaths::ProjectSavedDir() / TEXT("Agents") / Filename;
+		};
+
+		auto CleanupSavedAgents = [SavedAgentMdPath]()
+		{
+			for (EStationType K : {EStationType::Generator, EStationType::Filter,
+				EStationType::Sorter, EStationType::Checker})
+			{
+				IFileManager::Get().Delete(*SavedAgentMdPath(K));
+			}
+			AgentPromptLibrary::InvalidateCache();
+		};
+
+		It("second HandleDAGProposed leaves only the second mission's actors "
+		   "(reproduces the operator-observed duplicate-bucket bug)", [this, CleanupSavedAgents]()
+		{
+			CleanupSavedAgents();
+
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_ReMission_Counts"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnOrchestrator();
+
+			// Mission A: 4-station legacy line.
+			const TMap<EStationType, FString> NoPrompts;
+			GM->HandleDAGProposed(LegacyFourStationSpec(), NoPrompts);
+
+			TestEqual(TEXT("after mission A: 4 production + 1 orchestrator stations"),
+				CountAllStations(TW.World), 5);
+
+			// Mission B: 3-station line (no Sorter).
+			const FNodeRef Gen{EStationType::Generator, 0};
+			const FNodeRef Flt{EStationType::Filter,    0};
+			const FNodeRef Chk{EStationType::Checker,   0};
+			const TArray<FStationNode> ThreeStationSpec = {
+				FStationNode{Gen, FString(),       {}},
+				FStationNode{Flt, FString(),    {Gen}},
+				FStationNode{Chk, FString(),    {Flt}},
+			};
+			GM->HandleDAGProposed(ThreeStationSpec, NoPrompts);
+
+			// Bug under repair: without the clear, this would be 7 + 1 = 8.
+			// With the clear, it should be exactly 3 + 1 = 4.
+			TestEqual(TEXT("after mission B: only B's 3 + Orchestrator = 4 stations"),
+				CountAllStations(TW.World), 4);
+			TestNull(TEXT("Sorter from mission A is gone"),
+				[TW]() {
+					for (TActorIterator<ASorterStation> It(TW.World); It; ++It)
+					{
+						if (IsValid(*It)) return (AStation*)*It;
+					}
+					return (AStation*)nullptr;
+				}());
+
+			// Worker count also exact, not doubled.
+			int32 WorkerCount = 0;
+			for (TActorIterator<AWorkerRobot> It(TW.World); It; ++It)
+			{
+				if (IsValid(*It)) ++WorkerCount;
+			}
+			TestEqual(TEXT("3 workers (one per mission B station)"), WorkerCount, 3);
+
+			CleanupSavedAgents();
+		});
+
+		It("preserves Orchestrator registration in Director across re-mission", [this, CleanupSavedAgents]()
+		{
+			CleanupSavedAgents();
+
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_ReMission_OrchPreserved"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnOrchestrator();
+			AStation* OrchBefore = Director->GetStationOfType(EStationType::Orchestrator);
+			TestNotNull(TEXT("Orchestrator registered after SpawnOrchestrator"), OrchBefore);
+
+			const TMap<EStationType, FString> NoPrompts;
+			GM->HandleDAGProposed(LegacyFourStationSpec(), NoPrompts);
+			GM->HandleDAGProposed(LegacyFourStationSpec(), NoPrompts);
+
+			AStation* OrchAfter = Director->GetStationOfType(EStationType::Orchestrator);
+			TestNotNull(TEXT("Orchestrator still registered after re-mission"), OrchAfter);
+			TestEqual(TEXT("same Orchestrator instance preserved"), OrchAfter, OrchBefore);
+
+			CleanupSavedAgents();
+		});
+
+		It("in-flight bucket from the prior mission is destroyed by re-mission", [this, CleanupSavedAgents]()
+		{
+			CleanupSavedAgents();
+
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_ReMission_InFlightBucket"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnOrchestrator();
+			const TMap<EStationType, FString> NoPrompts;
+			GM->HandleDAGProposed(LegacyFourStationSpec(), NoPrompts);
+
+			// Simulate an in-flight bucket as if a worker was carrying it.
+			ABucket* InFlight = TW.World->SpawnActor<ABucket>(
+				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			InFlight->Contents = {42};
+			TestTrue(TEXT("in-flight bucket exists pre-re-mission"), IsValid(InFlight));
+
+			// Re-mission with the same spec.
+			GM->HandleDAGProposed(LegacyFourStationSpec(), NoPrompts);
+
+			TestFalse(TEXT("in-flight bucket destroyed by re-mission"),
+				IsValid(InFlight));
+
+			CleanupSavedAgents();
+		});
+
+		It("subsequent station construction reads the new mission's "
+		   "Saved/Agents/<Kind>.md, not stale prior-mission content", [this, CleanupSavedAgents, SavedAgentMdPath]()
+		{
+			CleanupSavedAgents();
+
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_ReMission_FreshPrompts"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnOrchestrator();
+
+			// Mission A: writes Filter.md with "MISSION_A_ROLE".
+			TMap<EStationType, FString> PromptsA;
+			PromptsA.Add(EStationType::Filter, TEXT("MISSION_A_ROLE"));
+			GM->HandleDAGProposed(LegacyFourStationSpec(), PromptsA);
+
+			FString FltContentA;
+			FFileHelper::LoadFileToString(FltContentA, *SavedAgentMdPath(EStationType::Filter));
+			TestTrue(TEXT("after mission A: Filter.md contains A's role"),
+				FltContentA.Contains(TEXT("MISSION_A_ROLE")));
+
+			// Mission B: writes Filter.md with "MISSION_B_ROLE".
+			TMap<EStationType, FString> PromptsB;
+			PromptsB.Add(EStationType::Filter, TEXT("MISSION_B_ROLE"));
+			GM->HandleDAGProposed(LegacyFourStationSpec(), PromptsB);
+
+			FString FltContentB;
+			FFileHelper::LoadFileToString(FltContentB, *SavedAgentMdPath(EStationType::Filter));
+			TestTrue(TEXT("after mission B: Filter.md contains B's role"),
+				FltContentB.Contains(TEXT("MISSION_B_ROLE")));
+			TestFalse(TEXT("after mission B: Filter.md no longer contains A's role"),
+				FltContentB.Contains(TEXT("MISSION_A_ROLE")));
+
+			CleanupSavedAgents();
 		});
 	});
 

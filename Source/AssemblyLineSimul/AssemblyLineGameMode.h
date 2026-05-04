@@ -157,14 +157,25 @@ public:
 	void WriteOrchestratorAuthoredPrompts(const TArray<FStationNode>& Nodes,
 		const TMap<EStationType, FString>& PromptsByKind);
 
+	// Story 34 — destroys every actor the previous mission spawned
+	// (non-Orchestrator stations, all workers, all buckets, the cinematic
+	// director, the feedback actor), wipes stale Saved/Agents/ files, and
+	// resets Director state via ClearLineState. No-op when the world has
+	// only the boot-time Orchestrator. Public for tests; production code
+	// invokes it from HandleDAGProposed.
+	void ClearExistingLine();
+
+	// Story 34 — public for tests so they can drive the spawn pipeline
+	// end-to-end (clear → write prompts → spawn → cinematic → feedback)
+	// without going through the chat subsystem.
+	void HandleDAGProposed(const TArray<FStationNode>& Nodes,
+		const TMap<EStationType, FString>& PromptsByKind);
+
 private:
 	// Story 32b — handle for UAgentChatSubsystem::OnDAGProposed. Fired when
 	// the Orchestrator's chat reply yields a parsed DAG; the handler runs
-	// SpawnLineFromSpec → SpawnCinematicDirector → StartAllSourceCycles.
-	// Story 33b — also writes Orchestrator-authored Role prompts to
-	// Saved/Agents/<Kind>.md before the spawn so freshly-spawned stations
-	// pick up the new Roles.
+	// ClearExistingLine (Story 34) → WriteOrchestratorAuthoredPrompts
+	// (Story 33b) → SpawnLineFromSpec → SpawnCinematicDirector →
+	// SpawnFeedback → StartAllSourceCycles.
 	FDelegateHandle DAGProposedHandle;
-	void HandleDAGProposed(const TArray<FStationNode>& Nodes,
-		const TMap<EStationType, FString>& PromptsByKind);
 };
