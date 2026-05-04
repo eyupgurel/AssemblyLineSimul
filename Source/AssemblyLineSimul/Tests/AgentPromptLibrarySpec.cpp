@@ -43,16 +43,33 @@ void FAgentPromptLibrarySpec::Define()
 
 	Describe("LoadAgentSection", [this]()
 	{
-		It("returns the Generator's DefaultRule from Generator.md verbatim", [this]()
+		// Helper: wipe Saved/Agents/<Kind>.md AND invalidate cache so the
+		// "verbatim from Content/Agents" tests aren't poisoned by an
+		// orchestrator-authored Saved/ override left behind by a recent
+		// PIE/packaged-app session (Story 33b loader prefers Saved/).
+		auto FreshContentLoad = []()
 		{
+			const FString SavedAgents = FPaths::ProjectSavedDir() / TEXT("Agents");
+			for (const TCHAR* F : {TEXT("Generator.md"), TEXT("Filter.md"),
+				TEXT("Sorter.md"), TEXT("Checker.md")})
+			{
+				IFileManager::Get().Delete(*(SavedAgents / F));
+			}
+			AgentPromptLibrary::InvalidateCache();
+		};
+
+		It("returns the Generator's DefaultRule from Generator.md verbatim", [this, FreshContentLoad]()
+		{
+			FreshContentLoad();
 			const FString Rule = AgentPromptLibrary::LoadAgentSection(
 				EStationType::Generator, TEXT("DefaultRule"));
 			TestEqual(TEXT("Generator default rule"), Rule,
 				FString(TEXT("Generate 10 random integers in the range 1 to 100")));
 		});
 
-		It("returns the Filter's Role description from Filter.md verbatim", [this]()
+		It("returns the Filter's Role description from Filter.md verbatim", [this, FreshContentLoad]()
 		{
+			FreshContentLoad();
 			const FString Role = AgentPromptLibrary::LoadAgentSection(
 				EStationType::Filter, TEXT("Role"));
 			TestEqual(TEXT("Filter role"), Role,

@@ -14,8 +14,11 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleCompleted, ABucket* /*Bu
 DECLARE_MULTICAST_DELEGATE(FOnAssemblyLineCheckerStarted);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleRejected, ABucket* /*Bucket*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineCycleRecycled, ABucket* /*Bucket*/);
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineStationActive, EStationType /*StationType*/);
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineStationIdle, EStationType /*StationType*/);
+// Story 36 — re-broadcast the worker's full FNodeRef so the cinematic
+// camera (and any other listener) can distinguish multi-instance Filters
+// of the same Kind. Pre-Story 36 this was OneParam<EStationType>.
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineStationActive, const FNodeRef& /*Ref*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssemblyLineStationIdle, const FNodeRef& /*Ref*/);
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API UAssemblyLineDirector : public UWorldSubsystem
@@ -54,11 +57,20 @@ public:
 
 	// Public accessor for the cinematic to introspect a station's worker (and therefore its
 	// CurrentBucket). Returns nullptr if the station type isn't registered.
+	// Story 35 — backward-compat shim: returns the Instance 0 worker for that Kind.
+	// Multi-instance specs need GetRobotByNodeRef.
 	AWorkerRobot* GetRobotForStation(EStationType Type) const;
 
 	// Public accessor so the chat subsystem can update a station's CurrentRule when the
 	// user instructs the agent. Returns nullptr if not registered.
+	// Story 35 — backward-compat shim: returns the Instance 0 station for that Kind.
+	// Multi-instance specs need GetStationByNodeRef.
 	AStation* GetStationOfType(EStationType Type) const;
+
+	// Story 35 — canonical lookups for multi-instance specs. The shims above
+	// hardcode Instance 0; these accept any (Kind, Instance) pair.
+	AStation*     GetStationByNodeRef(const FNodeRef& Ref) const;
+	AWorkerRobot* GetRobotByNodeRef  (const FNodeRef& Ref) const;
 
 	// Fires when a registered worker enters the PickUp phase at its station.
 	FOnAssemblyLineStationActive OnStationActive;
@@ -79,7 +91,13 @@ public:
 
 	// Public so unit specs can simulate a worker completion without spinning up a
 	// full FSM (e.g. test the empty-bucket recycle path).
+	// Story 35 — backward-compat shim. Equivalent to OnRobotDoneAt(FNodeRef{Type, 0}, Bucket).
 	void OnRobotDoneAt(EStationType Type, ABucket* Bucket);
+
+	// Story 35 — canonical FNodeRef-aware completion entry. Multi-instance
+	// specs route here so dispatch consults the correct (Kind, Instance)
+	// successors rather than always Instance 0.
+	void OnRobotDoneAt(const FNodeRef& Ref, ABucket* Bucket);
 
 	// Story 31a — register the line's topology. Per AC31a.6 dispatch routes
 	// through this graph instead of a hardcoded EStationType chain. Returns
@@ -102,11 +120,18 @@ public:
 	void ClearLineState();
 
 private:
+	// Story 35 — rekeyed from EStationType to FNodeRef for multi-instance support.
+	// One spec node = one entry. Instance 0 is the conventional "default" used by
+	// the EStationType-keyed backward-compat shims (GetStationOfType etc.).
 	UPROPERTY()
-	TMap<EStationType, TObjectPtr<AStation>> StationByType;
+	TMap<FNodeRef, TObjectPtr<AStation>> StationByNodeRef;
 
 	UPROPERTY()
-	TMap<EStationType, TObjectPtr<AWorkerRobot>> RobotByStation;
+	TMap<FNodeRef, TObjectPtr<AWorkerRobot>> RobotByNodeRef;
+
+	// Story 35 — per-Kind monotonic counter for auto-assigning Instance on
+	// RegisterStation. Reset by ClearLineState.
+	TMap<EStationType, int32> NextInstanceByKind;
 
 	FAssemblyLineDAG DAG;
 
@@ -118,16 +143,26 @@ private:
 	TMap<FNodeRef, TSet<FNodeRef>>                  WaitingFor;
 	TMap<FNodeRef, TArray<TWeakObjectPtr<ABucket>>> InboundBuckets;
 
-	AStation* GetStation(EStationType Type) const;
-	AWorkerRobot* GetRobot(EStationType Type) const;
+	// Story 35 — internal lookups now NodeRef-keyed. The EStationType
+	// helpers below are convenience wrappers over Instance 0.
+	AStation*     GetStation(const FNodeRef& Ref) const;
+	AWorkerRobot* GetRobot  (const FNodeRef& Ref) const;
 
-	void DispatchToStation(EStationType Type, ABucket* Bucket, AStation* SourceStation);
+	void DispatchToStation(const FNodeRef& Target, ABucket* Bucket, AStation* SourceStation);
+
+	// Story 37 — broadcasts OnCycleCompleted and (if bAutoLoop) schedules
+	// the recycle-and-restart timer. Used by both the Checker-terminal PASS
+	// branch and the "any registered terminal" branch so the same boilerplate
+	// doesn't get duplicated.
+	void CompleteCycle(ABucket* Bucket);
 
 	// Story 31d — if Child is a fan-in node (>1 parents in the DAG), queue
 	// Bucket and update the wait set. Returns true if queued (caller must
 	// NOT dispatch normally); false otherwise. Fires the merge inline when
 	// the wait set drains to empty.
-	bool QueueForFanInOrDispatch(const FNodeRef& Child, ABucket* Bucket, EStationType ParentType);
+	// Story 35 — ParentRef now FNodeRef so multi-instance fan-in works
+	// (e.g., Filter/0 and Filter/1 both feeding into a Sorter).
+	bool QueueForFanInOrDispatch(const FNodeRef& Child, ABucket* Bucket, const FNodeRef& ParentRef);
 
 	// Story 31d — invoked by QueueForFanInOrDispatch when WaitingFor[Child]
 	// drains. Calls Child's ProcessBucket with all queued inputs; on

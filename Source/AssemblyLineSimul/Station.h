@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "AssemblyLineTypes.h"
+#include "DAG/AssemblyLineDAG.h"  // FNodeRef on AStation (Story 35)
 #include "Station.generated.h"
 
 class ABucket;
@@ -47,6 +48,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Station")
 	EStationType StationType = EStationType::Generator;
+
+	// Story 35 — multi-instance per Kind. Set by Director::RegisterStation
+	// (auto-instance counter). Defaults to {Generator, 0}; the real value
+	// is back-written on registration so dispatch can identify which
+	// instance just finished.
+	FNodeRef NodeRef;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Station",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))

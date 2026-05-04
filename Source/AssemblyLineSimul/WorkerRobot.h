@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "AssemblyLineTypes.h"
+#include "DAG/AssemblyLineDAG.h"  // FNodeRef on phase events (Story 36)
 #include "WorkerRobot.generated.h"
 
 class ABucket;
@@ -28,7 +29,11 @@ enum class EWorkerState : uint8
 };
 
 DECLARE_DELEGATE_OneParam(FWorkerTaskComplete, ABucket* /*Bucket*/);
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnWorkerPhase, EStationType /*StationType*/);
+// Story 36 — phase events carry the assigned station's full FNodeRef so
+// downstream listeners (cinematic camera, multi-instance HUD, etc.) can
+// distinguish Filter/0 from Filter/1. Pre-Story 36 these were
+// EStationType-typed and the cinematic was multi-instance-blind.
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnWorkerPhase, const FNodeRef& /*Ref*/);
 // Aliases for clarity at the new fire sites (Working entry / Working exit).
 using FOnWorkerStartedWorking = FOnWorkerPhase;
 using FOnWorkerFinishedWorking = FOnWorkerPhase;

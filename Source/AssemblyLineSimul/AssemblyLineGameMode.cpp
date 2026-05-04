@@ -264,25 +264,11 @@ bool AAssemblyLineGameMode::SpawnLineFromSpec(const TArray<FStationNode>& Nodes)
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return false;
 
-	// AC32b.9 — single-instance-per-kind constraint. Chat / voice routing
-	// keys on EStationType today; multi-instance disambiguation is a future
-	// story. Reject upfront so the spawn loop doesn't half-build a line.
-	{
-		TSet<EStationType> Seen;
-		for (const FStationNode& N : Nodes)
-		{
-			bool bAlreadyIn = false;
-			Seen.Add(N.Ref.Kind, &bAlreadyIn);
-			if (bAlreadyIn)
-			{
-				UE_LOG(LogTemp, Error,
-					TEXT("SpawnLineFromSpec: spec contains duplicate kind %d "
-					     "(v1 single-instance constraint, AC32b.9)."),
-					(int32)N.Ref.Kind);
-				return false;
-			}
-		}
-	}
+	// Story 35 — the AC32b.9 single-instance-per-kind rejection is gone.
+	// Director now keys StationByNodeRef on the full FNodeRef so two Filters
+	// don't collide. The remaining limitations (chat/voice route to Instance
+	// 0 only, cinematic closeups for Instance 0 only, shared Role across
+	// instances of one Kind) are documented in Story 35's "Out of scope".
 
 	// Validate the topology before touching the world. BuildLineDAG runs
 	// Kahn's cycle check + duplicate-NodeRef check; on failure DAG is left
@@ -436,34 +422,35 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 	// Story 32b — shots regen from spawned line stations (DAG order),
 	// not a hardcoded StationCount=4 layout. Walks the DAG so the camera
 	// adapts to whatever topology the Orchestrator decided to build.
-	struct FStationShot { EStationType Kind; FVector Location; };
-	TArray<FStationShot> Spawned;
-
-	auto AppendKind = [&](EStationType Kind)
-	{
-		if (Kind == EStationType::Orchestrator) return;  // chat-only, no closeup
-		if (AStation* S = Director->GetStationOfType(Kind))
-		{
-			Spawned.Add({Kind, S->GetActorLocation()});
-		}
-	};
-
-	// Walk source nodes + their full descendant set. For a single-source
-	// linear line this gives sources + ancestors-of-each-terminal-in-order;
-	// for fan-out it covers every spawned station once.
+	// Story 36 — gather spawned station world positions just for the wide
+	// overview centroid. Per-station closeups are gone; the camera follows
+	// the active bucket instead.
 	const FAssemblyLineDAG& DAG = Director->GetDAG();
-	TSet<EStationType> SeenKinds;
-	for (const FNodeRef& Src : DAG.GetSourceNodes())
+	TArray<FVector> SpawnedLocs;
 	{
-		if (!SeenKinds.Contains(Src.Kind)) { SeenKinds.Add(Src.Kind); AppendKind(Src.Kind); }
-	}
-	for (const FNodeRef& Term : DAG.GetTerminalNodes())
-	{
-		for (const FNodeRef& A : DAG.GetAncestors(Term))
+		TSet<EStationType> SeenKinds;
+		auto AppendIfStation = [&](EStationType Kind)
 		{
-			if (!SeenKinds.Contains(A.Kind)) { SeenKinds.Add(A.Kind); AppendKind(A.Kind); }
+			if (Kind == EStationType::Orchestrator) return;
+			if (SeenKinds.Contains(Kind)) return;
+			SeenKinds.Add(Kind);
+			if (AStation* S = Director->GetStationOfType(Kind))
+			{
+				SpawnedLocs.Add(S->GetActorLocation());
+			}
+		};
+		for (const FNodeRef& Src : DAG.GetSourceNodes())
+		{
+			AppendIfStation(Src.Kind);
 		}
-		if (!SeenKinds.Contains(Term.Kind)) { SeenKinds.Add(Term.Kind); AppendKind(Term.Kind); }
+		for (const FNodeRef& Term : DAG.GetTerminalNodes())
+		{
+			for (const FNodeRef& A : DAG.GetAncestors(Term))
+			{
+				AppendIfStation(A.Kind);
+			}
+			AppendIfStation(Term.Kind);
+		}
 	}
 
 	auto MakeShot = [](const FVector& Loc, const FVector& LookAt, float FOV, float Hold, float Blend)
@@ -477,49 +464,35 @@ void AAssemblyLineGameMode::SpawnCinematicDirector()
 		return Shot;
 	};
 
-	Cinematic->Shots.Reset();
-	Cinematic->StationCloseupShotIndex.Reset();
-
-	if (Spawned.Num() == 0)
-	{
-		// Nothing to look at — keep a single overview centered on LineOrigin
-		// so the cinematic doesn't crash at Start(). Mostly relevant to tests
-		// that call SpawnCinematicDirector with no spawned line.
-		Cinematic->Shots.Add(MakeShot(LineOrigin + FVector(-2200.f, 2200.f, 1600.f), LineOrigin, 85.f, 8.f, 2.5f));
-		Cinematic->CheckerShotIndex = 0;
-		Cinematic->ResumeShotIndex  = 0;
-		Cinematic->LingerSecondsAfterIdle = 0.f;
-		Cinematic->BindToAssemblyLine(Director);
-		Cinematic->Start();
-		return;
-	}
-
-	// Compute line center as the centroid of spawned-station X positions.
-	FVector Centroid = FVector::ZeroVector;
-	for (const FStationShot& S : Spawned) { Centroid += S.Location; }
-	Centroid /= (float)Spawned.Num();
-
-	// Index 0: wide overview.
-	Cinematic->Shots.Add(MakeShot(Centroid + FVector(-2200.f, 2200.f, 1600.f), Centroid, 85.f, 8.f, 2.5f));
-
-	// Indices 1..N: per-station closeups.
-	int32 CheckerShot = 0;
-	for (int32 i = 0; i < Spawned.Num(); ++i)
-	{
-		const FVector S = Spawned[i].Location;
-		const FVector TableTop = S + FVector(0.f, 0.f, 120.f);
-		const int32 ShotIdx = Cinematic->Shots.Add(
-			MakeShot(S + FVector(0.f, 250.f, 500.f), TableTop, 45.f, 25.f, 2.5f));
-		Cinematic->StationCloseupShotIndex.Add(Spawned[i].Kind, ShotIdx);
-		if (Spawned[i].Kind == EStationType::Checker)
+	const FVector Centroid = SpawnedLocs.Num() > 0
+		? [&SpawnedLocs]()
 		{
-			CheckerShot = ShotIdx;
-		}
-	}
+			FVector Sum = FVector::ZeroVector;
+			for (const FVector& L : SpawnedLocs) Sum += L;
+			return Sum / (float)SpawnedLocs.Num();
+		}()
+		: LineOrigin;
 
-	Cinematic->CheckerShotIndex = CheckerShot;
-	Cinematic->ResumeShotIndex  = 0;
+	// Story 36 — exactly one shot: the wide overview. No per-station
+	// closeup shots; the FollowCamera handles every Working window.
+	Cinematic->Shots.Reset();
+	Cinematic->Shots.Add(MakeShot(
+		Centroid + FVector(-2200.f, 2200.f, 1600.f),
+		Centroid, 85.f, 8.f, 2.5f));
+	Cinematic->ResumeShotIndex = 0;
 	Cinematic->LingerSecondsAfterIdle = 0.f;
+
+	// Story 36 — author the default zoom-dance: wide → mid → close → hold.
+	// Offsets are RELATIVE to the bucket's world position; the FollowCamera
+	// computes its position each tick as Bucket.Loc + interpolated offset.
+	// Sequence designed so a typical Working window (Generator 0 s,
+	// other stations ~5 s) progresses through the keyframes naturally.
+	FFramingSequence DefaultSeq;
+	DefaultSeq.Keyframes.Add({/*Time=*/0.0f, /*Offset=*/FVector(-100.f, 600.f, 800.f), /*FOV=*/70.f, /*Blend=*/1.0f});
+	DefaultSeq.Keyframes.Add({/*Time=*/2.0f, /*Offset=*/FVector(-50.f,  400.f, 500.f), /*FOV=*/55.f, /*Blend=*/1.5f});
+	DefaultSeq.Keyframes.Add({/*Time=*/4.5f, /*Offset=*/FVector( 0.f,   250.f, 280.f), /*FOV=*/42.f, /*Blend=*/1.5f});
+	DefaultSeq.Keyframes.Add({/*Time=*/7.0f, /*Offset=*/FVector( 0.f,   250.f, 280.f), /*FOV=*/42.f, /*Blend=*/0.5f});  // hold close
+	Cinematic->DefaultFollowSequence = DefaultSeq;
 
 	Cinematic->BindToAssemblyLine(Director);
 	Cinematic->Start();

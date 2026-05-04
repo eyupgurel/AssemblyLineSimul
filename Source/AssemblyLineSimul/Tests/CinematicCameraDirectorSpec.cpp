@@ -5,9 +5,13 @@
 
 #include "AssemblyLineDirector.h"
 #include "Bucket.h"
+#include "Camera/CameraActor.h"
 #include "CinematicCameraDirector.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Station.h"
+#include "TestStations.h"
+#include "WorkerRobot.h"
 
 namespace AssemblyLineCinematicTests
 {
@@ -36,24 +40,38 @@ namespace AssemblyLineCinematicTests
 		}
 	};
 
-	static ACinematicCameraDirector* SpawnDirector(UWorld* World, int32 NumShots, bool bLoop)
+	// Story 36 — minimal cinematic with one wide overview shot + a default
+	// follow sequence. Tests can supplement with FramingByKind overrides.
+	static ACinematicCameraDirector* SpawnDirectorWithDefaults(UWorld* World,
+		const TArray<FFramingKeyframe>& DefaultSeq = {})
 	{
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		ACinematicCameraDirector* D = World->SpawnActor<ACinematicCameraDirector>(
 			ACinematicCameraDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
 		if (!D) return nullptr;
-		D->bLoop = bLoop;
 		D->Shots.Reset();
-		for (int32 i = 0; i < NumShots; ++i)
-		{
-			FCinematicShot Shot;
-			Shot.Location = FVector(static_cast<float>(i) * 100.f, 0.f, 0.f);
-			Shot.HoldDuration = 999.f;  // never auto-advance during the test
-			Shot.BlendDuration = 0.f;
-			D->Shots.Add(Shot);
-		}
+		FCinematicShot Wide;
+		Wide.Location     = FVector(-1000.f, 1000.f, 800.f);
+		Wide.Rotation     = FRotator::ZeroRotator;
+		Wide.FieldOfView  = 85.f;
+		Wide.HoldDuration = 999.f;
+		Wide.BlendDuration = 0.f;
+		D->Shots.Add(Wide);
+		D->ResumeShotIndex = 0;
+		D->DefaultFollowSequence.Keyframes = DefaultSeq;
 		return D;
+	}
+
+	// A simple subject for follow tests. Any AActor works since the camera
+	// reads only its world location.
+	static AActor* SpawnSubjectAt(UWorld* World, const FVector& Loc)
+	{
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		// Use ABucket as a convenient AActor stand-in (it's the production
+		// subject anyway).
+		return World->SpawnActor<ABucket>(ABucket::StaticClass(), Loc, FRotator::ZeroRotator, Params);
 	}
 }
 
@@ -65,227 +83,289 @@ void FCinematicCameraDirectorSpec::Define()
 {
 	using namespace AssemblyLineCinematicTests;
 
-	Describe("AdvanceShot", [this]()
+	Describe("Mode default + wide-overview entry (Story 36)", [this]()
 	{
-		It("loops through shot indices when bLoop is true", [this]()
+		It("constructs in WideOverview mode with no follow subject", [this]()
 		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_Loop"));
-			ACinematicCameraDirector* D = SpawnDirector(TW.World, 3, /*bLoop=*/true);
-			TestNotNull(TEXT("director spawned"), D);
+			FScopedTestWorld TW(TEXT("CinSpec_DefaultMode"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World);
 			if (!D) return;
-
-			TArray<int32> Observed;
-			Observed.Add(D->GetCurrentShotIndex());
-			for (int32 i = 0; i < 5; ++i)
-			{
-				D->AdvanceShot();
-				Observed.Add(D->GetCurrentShotIndex());
-			}
-
-			const TArray<int32> Expected = { 0, 1, 2, 0, 1, 2 };
-			TestEqual(TEXT("loop sequence length"), Observed.Num(), Expected.Num());
-			for (int32 i = 0; i < Expected.Num() && i < Observed.Num(); ++i)
-			{
-				TestEqual(*FString::Printf(TEXT("loop step %d"), i), Observed[i], Expected[i]);
-			}
+			TestEqual(TEXT("default mode is WideOverview"),
+				static_cast<int32>(D->GetMode()),
+				static_cast<int32>(ECinematicMode::WideOverview));
+			TestNull(TEXT("no follow subject"), D->GetFollowSubject());
 		});
 
-		It("holds on the last shot when bLoop is false", [this]()
+		It("Start spawns the wide-overview shot camera + the permanent FollowCamera", [this]()
 		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_Hold"));
-			ACinematicCameraDirector* D = SpawnDirector(TW.World, 3, /*bLoop=*/false);
-			TestNotNull(TEXT("director spawned"), D);
+			FScopedTestWorld TW(TEXT("CinSpec_StartSpawnsCameras"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World);
 			if (!D) return;
-
-			TArray<int32> Observed;
-			Observed.Add(D->GetCurrentShotIndex());
-			for (int32 i = 0; i < 5; ++i)
-			{
-				D->AdvanceShot();
-				Observed.Add(D->GetCurrentShotIndex());
-			}
-
-			const TArray<int32> Expected = { 0, 1, 2, 2, 2, 2 };
-			TestEqual(TEXT("hold sequence length"), Observed.Num(), Expected.Num());
-			for (int32 i = 0; i < Expected.Num() && i < Observed.Num(); ++i)
-			{
-				TestEqual(*FString::Printf(TEXT("hold step %d"), i), Observed[i], Expected[i]);
-			}
+			D->Start();
+			TestNotNull(TEXT("FollowCamera spawned"), D->GetFollowCamera());
 		});
 	});
 
-	Describe("Reactive jumps", [this]()
+	Describe("EnterFollowingBucket (Story 36)", [this]()
 	{
-		It("does NOT jump on OnCheckerStarted (Checker treated like other stations)", [this]()
+		It("switches to FollowingBucket mode with the supplied subject", [this]()
 		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_NoCheckerJump"));
-			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
-			TestNotNull(TEXT("AssemblyLineDirector subsystem available"), AsmDirector);
-			if (!AsmDirector) return;
+			FScopedTestWorld TW(TEXT("CinSpec_EnterFollow_Mode"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World, {
+				{0.f, FVector(0.f, 200.f, 100.f), 50.f, 0.f},
+			});
+			if (!D) return;
+			D->Start();
 
-			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 3, /*bLoop=*/true);
-			CinDirector->CheckerShotIndex = 2;
-			CinDirector->ResumeShotIndex = 0;
-			CinDirector->BindToAssemblyLine(AsmDirector);
+			AActor* Subject = SpawnSubjectAt(TW.World, FVector(500.f, 0.f, 0.f));
+			D->EnterFollowingBucket(Subject, EStationType::Filter);
 
-			const int32 InitialIdx = CinDirector->GetCurrentShotIndex();
-			AsmDirector->OnCheckerStarted.Broadcast();
-
-			TestEqual(TEXT("shot index unchanged after OnCheckerStarted"),
-				CinDirector->GetCurrentShotIndex(), InitialIdx);
+			TestEqual(TEXT("mode is FollowingBucket"),
+				static_cast<int32>(D->GetMode()),
+				static_cast<int32>(ECinematicMode::FollowingBucket));
+			TestEqual(TEXT("subject is the supplied actor"),
+				D->GetFollowSubject(), Subject);
 		});
 
-		It("jumps to StationCloseupShotIndex[N] when Director broadcasts OnStationActive(N)", [this]()
+		It("places the FollowCamera at subject + first-keyframe offset on entry", [this]()
 		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_StationActive"));
-			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
-			TestNotNull(TEXT("AssemblyLineDirector subsystem"), AsmDirector);
-			if (!AsmDirector) return;
+			FScopedTestWorld TW(TEXT("CinSpec_EnterFollow_InitialOffset"));
+			const FVector ExpectedOffset(0.f, 600.f, 800.f);
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World, {
+				{0.f, ExpectedOffset, 70.f, 0.f},
+			});
+			if (!D) return;
+			D->Start();
 
-			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
-			CinDirector->StationCloseupShotIndex.Add(EStationType::Sorter, 3);
-			CinDirector->ResumeShotIndex = 0;
-			CinDirector->BindToAssemblyLine(AsmDirector);
+			const FVector SubjectLoc(1500.f, 0.f, 100.f);
+			AActor* Subject = SpawnSubjectAt(TW.World, SubjectLoc);
+			D->EnterFollowingBucket(Subject, EStationType::Filter);
 
-			AsmDirector->OnStationActive.Broadcast(EStationType::Sorter);
+			ACameraActor* Cam = D->GetFollowCamera();
+			TestNotNull(TEXT("follow camera exists"), Cam);
+			if (!Cam) return;
 
-			TestEqual(TEXT("jumped to mapped shot"),
-				CinDirector->GetCurrentShotIndex(), 3);
+			const FVector CamLoc = Cam->GetActorLocation();
+			const FVector Expected = SubjectLoc + ExpectedOffset;
+			TestTrue(TEXT("camera at subject + first-keyframe offset"),
+				CamLoc.Equals(Expected, /*Tolerance=*/0.5f));
 		});
 
-		It("returns to ResumeShotIndex when Director broadcasts OnStationIdle(N)", [this]()
+		It("most-recent-subject tiebreak: second EnterFollowingBucket replaces subject + restarts sequence",
+		   [this]()
 		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_StationIdle"));
-			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
-			TestNotNull(TEXT("AssemblyLineDirector subsystem"), AsmDirector);
-			if (!AsmDirector) return;
+			FScopedTestWorld TW(TEXT("CinSpec_EnterFollow_Replace"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World, {
+				{0.f, FVector(0.f, 100.f, 100.f), 50.f, 0.f},
+			});
+			if (!D) return;
+			D->Start();
 
-			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
-			CinDirector->StationCloseupShotIndex.Add(EStationType::Sorter, 3);
-			CinDirector->ResumeShotIndex = 1;  // distinct from initial 0 to discriminate
-			CinDirector->BindToAssemblyLine(AsmDirector);
+			AActor* SubjectA = SpawnSubjectAt(TW.World, FVector(0.f, 0.f, 0.f));
+			AActor* SubjectB = SpawnSubjectAt(TW.World, FVector(2000.f, 0.f, 0.f));
 
-			AsmDirector->OnStationActive.Broadcast(EStationType::Sorter);
-			AsmDirector->OnStationIdle.Broadcast(EStationType::Sorter);
+			D->EnterFollowingBucket(SubjectA, EStationType::Filter);
+			TestEqual(TEXT("first follow sets SubjectA"),
+				D->GetFollowSubject(), SubjectA);
 
-			TestEqual(TEXT("returned to ResumeShotIndex"),
-				CinDirector->GetCurrentShotIndex(), CinDirector->ResumeShotIndex);
+			D->EnterFollowingBucket(SubjectB, EStationType::Sorter);
+			TestEqual(TEXT("second follow replaces with SubjectB"),
+				D->GetFollowSubject(), SubjectB);
+		});
+	});
+
+	Describe("Tick framing-keyframe interpolation (Story 36)", [this]()
+	{
+		It("Tick positions the FollowCamera at subject + active keyframe offset", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinSpec_Tick_PositionsCamera"));
+			const FVector Offset(50.f, 300.f, 400.f);
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World, {
+				{0.f, Offset, 60.f, 0.f},
+			});
+			if (!D) return;
+			D->Start();
+
+			const FVector SubjectLoc(750.f, 0.f, 0.f);
+			AActor* Subject = SpawnSubjectAt(TW.World, SubjectLoc);
+			D->EnterFollowingBucket(Subject, EStationType::Filter);
+
+			TW.World->Tick(LEVELTICK_All, 0.05f);
+
+			ACameraActor* Cam = D->GetFollowCamera();
+			TestNotNull(TEXT("follow camera"), Cam);
+			if (!Cam) return;
+
+			const FVector Expected = SubjectLoc + Offset;
+			TestTrue(TEXT("camera tracks subject + offset after tick"),
+				Cam->GetActorLocation().Equals(Expected, /*Tolerance=*/0.5f));
 		});
 
-		It("enters chase mode targeting the rejected bucket on OnCycleRejected "
-		   "(Story 16 AC16.1)", [this]()
+		It("interpolates between keyframes over time", [this]()
 		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_ChaseEnter"));
-			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
-			if (!AsmDirector) return;
+			FScopedTestWorld TW(TEXT("CinSpec_Tick_Interpolates"));
+			// Two keyframes: t=0 offset Z=100, t=2 offset Z=300, BlendTime=2s.
+			// Drive cinematic Tick directly so elapsed advancement is
+			// deterministic (independent of world tick scheduling in
+			// headless test fixtures).
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World, {
+				{0.f, FVector(0.f, 0.f, 100.f), 60.f, 1.f},
+				{2.f, FVector(0.f, 0.f, 300.f), 60.f, 2.f},
+			});
+			if (!D) return;
+			D->Start();
 
-			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
-			CinDirector->BindToAssemblyLine(AsmDirector);
+			AActor* Subject = SpawnSubjectAt(TW.World, FVector::ZeroVector);
+			D->EnterFollowingBucket(Subject, EStationType::Filter);
 
-			TestFalse(TEXT("chase off at construction"), CinDirector->IsChasingBucket());
+			// Advance ELAPSED in 0.05 s steps to ~3 s (1 s into the blend
+			// toward the t=2 keyframe). With BlendTime=2, alpha = (3-2)/2
+			// = 0.5 → midway → Z ≈ 200.
+			for (int32 i = 0; i < 60; ++i) D->Tick(0.05f);
 
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			ACameraActor* Cam = D->GetFollowCamera();
+			if (!Cam) return;
+			const float Z = Cam->GetActorLocation().Z;
+			TestTrue(TEXT("Z interpolated to roughly midway (180–220)"),
+				Z >= 180.f && Z <= 220.f);
+		});
+	});
 
-			AsmDirector->OnCycleRejected.Broadcast(Bucket);
+	Describe("FramingByKind override (Story 36)", [this]()
+	{
+		It("uses per-Kind override when present; falls back to default otherwise", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinSpec_PerKindOverride"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World, {
+				{0.f, FVector(0.f, 0.f, 100.f), 60.f, 0.f},  // default
+			});
+			if (!D) return;
 
-			TestTrue(TEXT("chase active after OnCycleRejected"), CinDirector->IsChasingBucket());
-			TestEqual(TEXT("chase target is the rejected bucket"),
-				CinDirector->GetChaseTarget(), Bucket);
+			FFramingSequence FilterSeq;
+			FilterSeq.Keyframes.Add({0.f, FVector(0.f, 0.f, 999.f), 30.f, 0.f});
+			D->FramingByKind.Add(EStationType::Filter, FilterSeq);
+			D->Start();
+
+			AActor* Subject = SpawnSubjectAt(TW.World, FVector::ZeroVector);
+
+			// Filter (override) → Z=999
+			D->EnterFollowingBucket(Subject, EStationType::Filter);
+			TestTrue(TEXT("Filter uses override (Z=999)"),
+				D->GetFollowCamera()->GetActorLocation().Equals(FVector(0.f, 0.f, 999.f), 0.5f));
+
+			// Sorter (no override) → Z=100 from default
+			D->EnterFollowingBucket(Subject, EStationType::Sorter);
+			TestTrue(TEXT("Sorter falls back to default (Z=100)"),
+				D->GetFollowCamera()->GetActorLocation().Equals(FVector(0.f, 0.f, 100.f), 0.5f));
+		});
+	});
+
+	Describe("HandleStationIdle (Story 36)", [this]()
+	{
+		It("returns to WideOverview immediately when LingerSecondsAfterIdle == 0", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinSpec_IdleReturns"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World, {
+				{0.f, FVector(0.f, 0.f, 100.f), 60.f, 0.f},
+			});
+			if (!D) return;
+			D->LingerSecondsAfterIdle = 0.f;
+			D->Start();
+
+			AActor* Subject = SpawnSubjectAt(TW.World, FVector::ZeroVector);
+			D->EnterFollowingBucket(Subject, EStationType::Filter);
+			TestEqual(TEXT("entered FollowingBucket"),
+				static_cast<int32>(D->GetMode()),
+				static_cast<int32>(ECinematicMode::FollowingBucket));
+
+			D->EnterWideOverview();  // direct call simulates HandleStationIdle's no-linger branch
+			TestEqual(TEXT("returned to WideOverview"),
+				static_cast<int32>(D->GetMode()),
+				static_cast<int32>(ECinematicMode::WideOverview));
+			TestNull(TEXT("subject cleared"), D->GetFollowSubject());
+		});
+	});
+
+	Describe("Subject invalidation (Story 36)", [this]()
+	{
+		It("falls back to WideOverview when the follow subject is destroyed mid-tick", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinSpec_SubjectVanishes"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World, {
+				{0.f, FVector(0.f, 0.f, 100.f), 60.f, 0.f},
+			});
+			if (!D) return;
+			D->Start();
+
+			AActor* Subject = SpawnSubjectAt(TW.World, FVector::ZeroVector);
+			D->EnterFollowingBucket(Subject, EStationType::Filter);
+			TestEqual(TEXT("FollowingBucket pre-destroy"),
+				static_cast<int32>(D->GetMode()),
+				static_cast<int32>(ECinematicMode::FollowingBucket));
+
+			Subject->Destroy();
+			// Drive Tick directly — TWeakObjectPtr.Get() returns null for
+			// pending-kill actors, and TickFollowCamera bails to overview.
+			D->Tick(0.05f);
+
+			TestEqual(TEXT("dropped to WideOverview after subject destroyed"),
+				static_cast<int32>(D->GetMode()),
+				static_cast<int32>(ECinematicMode::WideOverview));
+		});
+	});
+
+	Describe("Chase preserved (Story 16 + Story 36 unification)", [this]()
+	{
+		It("HandleCycleRejected enters ChasingBucket mode with the rejected bucket as subject", [this]()
+		{
+			FScopedTestWorld TW(TEXT("CinSpec_ChaseRejected"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World);
+			if (!D) return;
+			D->Start();
+
+			ABucket* Bucket = (ABucket*)SpawnSubjectAt(TW.World, FVector(2000.f, 0.f, 0.f));
+			D->EnterChase(Bucket);
+
+			TestEqual(TEXT("mode is ChasingBucket"),
+				static_cast<int32>(D->GetMode()),
+				static_cast<int32>(ECinematicMode::ChasingBucket));
+			TestTrue(TEXT("IsChasingBucket reports true"), D->IsChasingBucket());
+			TestEqual(TEXT("GetChaseTarget returns the bucket"),
+				D->GetChaseTarget(), Bucket);
 		});
 
-		It("exits chase mode when the rework station's worker enters Working "
-		   "(Story 16 AC16.2)", [this]()
+		It("Chase + Follow share the same FollowCamera actor (no double-spawn)", [this]()
 		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_ChaseExit"));
-			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
-			if (!AsmDirector) return;
+			FScopedTestWorld TW(TEXT("CinSpec_OneFollowCamera"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World, {
+				{0.f, FVector(0.f, 0.f, 100.f), 60.f, 0.f},
+			});
+			if (!D) return;
+			D->Start();
 
-			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
-			CinDirector->StationCloseupShotIndex.Add(EStationType::Filter, 1);
-			CinDirector->BindToAssemblyLine(AsmDirector);
+			ACameraActor* CamBefore = D->GetFollowCamera();
+			TestNotNull(TEXT("follow camera spawned at Start"), CamBefore);
 
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			AActor* Subject = SpawnSubjectAt(TW.World, FVector::ZeroVector);
+			D->EnterFollowingBucket(Subject, EStationType::Filter);
+			D->EnterChase((ABucket*)Subject);
+			D->EnterFollowingBucket(Subject, EStationType::Sorter);
 
-			AsmDirector->OnCycleRejected.Broadcast(Bucket);
-			TestTrue(TEXT("chase active before rework"), CinDirector->IsChasingBucket());
-
-			AsmDirector->OnStationActive.Broadcast(EStationType::Filter);
-
-			TestFalse(TEXT("chase ends when rework station enters Working"),
-				CinDirector->IsChasingBucket());
+			TestEqual(TEXT("same FollowCamera reused across mode transitions"),
+				D->GetFollowCamera(), CamBefore);
 		});
 
-		It("updates the chase target when a SECOND rejection arrives "
-		   "(Story 16 AC16.3)", [this]()
+		It("EnterChase with null bucket falls back to WideOverview (existing contract)", [this]()
 		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_ChaseSecond"));
-			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
-			if (!AsmDirector) return;
+			FScopedTestWorld TW(TEXT("CinSpec_ChaseNull"));
+			ACinematicCameraDirector* D = SpawnDirectorWithDefaults(TW.World);
+			if (!D) return;
+			D->Start();
 
-			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
-			CinDirector->BindToAssemblyLine(AsmDirector);
-
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* B1 = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			ABucket* B2 = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector(500.f, 0.f, 0.f), FRotator::ZeroRotator, Params);
-
-			AsmDirector->OnCycleRejected.Broadcast(B1);
-			TestEqual(TEXT("first chase target"), CinDirector->GetChaseTarget(), B1);
-
-			AsmDirector->OnCycleRejected.Broadcast(B2);
-			TestEqual(TEXT("second chase target replaces first"),
-				CinDirector->GetChaseTarget(), B2);
-		});
-
-		It("falls back to ResumeShotIndex when OnCycleCompleted has no bucket "
-		   "(degenerate case — usually it has the accepted bucket and chases it)", [this]()
-		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_Resume"));
-			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
-			if (!AsmDirector) return;
-
-			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 3, /*bLoop=*/true);
-			CinDirector->CheckerShotIndex = 2;
-			CinDirector->ResumeShotIndex = 1;  // distinct from initial 0 so a stuck stub doesn't pass
-			CinDirector->BindToAssemblyLine(AsmDirector);
-
-			AsmDirector->OnCheckerStarted.Broadcast();
-			AsmDirector->OnCycleCompleted.Broadcast(nullptr);
-
-			TestEqual(TEXT("null-bucket falls back to ResumeShotIndex"),
-				CinDirector->GetCurrentShotIndex(), CinDirector->ResumeShotIndex);
-			TestFalse(TEXT("no chase entered for null bucket"),
-				CinDirector->IsChasingBucket());
-		});
-
-		It("enters chase mode targeting the ACCEPTED bucket on OnCycleCompleted "
-		   "with a real bucket — victory-beat close-up before the bucket vanishes", [this]()
-		{
-			FScopedTestWorld TW(TEXT("CinematicSpec_ChaseOnPass"));
-			UAssemblyLineDirector* AsmDirector = TW.World->GetSubsystem<UAssemblyLineDirector>();
-			if (!AsmDirector) return;
-
-			ACinematicCameraDirector* CinDirector = SpawnDirector(TW.World, 5, /*bLoop=*/true);
-			CinDirector->BindToAssemblyLine(AsmDirector);
-
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-
-			AsmDirector->OnCycleCompleted.Broadcast(Bucket);
-
-			TestTrue(TEXT("chase active after OnCycleCompleted with valid bucket"),
-				CinDirector->IsChasingBucket());
-			TestEqual(TEXT("chase target is the accepted bucket"),
-				CinDirector->GetChaseTarget(), Bucket);
+			D->EnterChase(nullptr);
+			TestEqual(TEXT("null chase → WideOverview"),
+				static_cast<int32>(D->GetMode()),
+				static_cast<int32>(ECinematicMode::WideOverview));
 		});
 	});
 }

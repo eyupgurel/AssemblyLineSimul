@@ -223,34 +223,10 @@ void FAssemblyLineGameModeSpec::Define()
 				CountStationsByClass(TW.World, ACheckerStation::StaticClass()), 1);
 		});
 
-		It("rejects a spec containing duplicate kinds (v1 single-instance constraint, AC32b.9)", [this]()
-		{
-			AddExpectedError(TEXT("duplicate"),
-				EAutomationExpectedErrorFlags::Contains, /*ExpectedNumOccurrences=*/1);
-
-			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_SpawnFromSpec_DupKind"));
-
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
-				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			if (!GM) return;
-
-			// Two Filters in the same spec — disallowed in v1 because chat
-			// routing keys on EStationType (one Filter per kind).
-			const FNodeRef Gen{EStationType::Generator, 0};
-			const FNodeRef Flt0{EStationType::Filter,   0};
-			const FNodeRef Flt1{EStationType::Filter,   1};
-			const TArray<FStationNode> DupSpec = {
-				FStationNode{Gen,  FString(),       {}},
-				FStationNode{Flt0, FString(),    {Gen}},
-				FStationNode{Flt1, FString(),    {Gen}},
-			};
-
-			const bool bOk = GM->SpawnLineFromSpec(DupSpec);
-			TestFalse(TEXT("SpawnLineFromSpec returned false on duplicate-kind spec"), bOk);
-			TestEqual(TEXT("zero stations spawned"), CountAllStations(TW.World), 0);
-		});
+		// Story 35 lifted the AC32b.9 duplicate-kind rejection. The
+		// "rejects duplicate kinds" test is gone; multi-instance acceptance
+		// is covered by the new "Multi-instance per Kind" Describe block
+		// further down (Story 35).
 
 		It("returns false and leaves world untouched on a cyclic spec", [this]()
 		{
@@ -285,6 +261,104 @@ void FAssemblyLineGameModeSpec::Define()
 	// Story 32b — these tests previously used SpawnAssemblyLine to set up a
 	// 4-station line; they now use SpawnLineFromSpec(LegacyFourStationSpec).
 	// Same coverage, new entry point.
+	Describe("SpawnLineFromSpec multi-instance per Kind (Story 35)", [this]()
+	{
+		// Builder for the operator's exact 5-stage mission shape:
+		// generate → filter (evens) → sort desc → check → filter (top 2).
+		// Two Filters in one spec — Story 32b would have rejected this;
+		// Story 35 accepts it.
+		auto FiveStationSpec = []() -> TArray<FStationNode>
+		{
+			const FNodeRef Gen {EStationType::Generator, 0};
+			const FNodeRef Flt0{EStationType::Filter,    0};
+			const FNodeRef Srt {EStationType::Sorter,    0};
+			const FNodeRef Chk {EStationType::Checker,   0};
+			const FNodeRef Flt1{EStationType::Filter,    1};
+			return {
+				FStationNode{Gen,  TEXT("generate 20"),         {}},
+				FStationNode{Flt0, TEXT("keep evens"),       {Gen}},
+				FStationNode{Srt,  TEXT("sort descending"),  {Flt0}},
+				FStationNode{Chk,  TEXT("verify"),           {Srt}},
+				FStationNode{Flt1, TEXT("take top 2"),       {Chk}},
+			};
+		};
+
+		It("accepts a 5-node spec with two Filters and spawns 5 stations + 5 workers", [this, FiveStationSpec]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_S35_FiveStation"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			const bool bOk = GM->SpawnLineFromSpec(FiveStationSpec());
+			TestTrue(TEXT("SpawnLineFromSpec accepts the 5-node multi-instance spec"), bOk);
+
+			TestEqual(TEXT("5 stations spawned"), CountAllStations(TW.World), 5);
+
+			int32 WorkerCount = 0;
+			for (TActorIterator<AWorkerRobot> It(TW.World); It; ++It) { ++WorkerCount; }
+			TestEqual(TEXT("5 workers spawned (one per station instance)"), WorkerCount, 5);
+
+			// Two Filters specifically — verify by class.
+			TestEqual(TEXT("2 AFilterStation actors"),
+				CountStationsByClass(TW.World, AFilterStation::StaticClass()), 2);
+		});
+
+		It("each spawned station's NodeRef matches its spec node's NodeRef", [this, FiveStationSpec]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_S35_NodeRefMatch"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnLineFromSpec(FiveStationSpec());
+
+			AStation* F0 = Director->GetStationByNodeRef(FNodeRef{EStationType::Filter, 0});
+			AStation* F1 = Director->GetStationByNodeRef(FNodeRef{EStationType::Filter, 1});
+			TestNotNull(TEXT("Filter/0 registered"), F0);
+			TestNotNull(TEXT("Filter/1 registered"), F1);
+			if (F0 && F1)
+			{
+				TestNotEqual(TEXT("Filter/0 and Filter/1 are distinct actors"), F0, F1);
+				TestEqual(TEXT("Filter/0's CurrentRule is 'keep evens'"),
+					F0->CurrentRule, FString(TEXT("keep evens")));
+				TestEqual(TEXT("Filter/1's CurrentRule is 'take top 2'"),
+					F1->CurrentRule, FString(TEXT("take top 2")));
+			}
+		});
+
+		It("GetStationOfType(Filter) returns the Filter/0 instance (backward-compat shim)",
+		   [this, FiveStationSpec]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_S35_BackwardCompat"));
+			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
+			if (!Director) return;
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			GM->SpawnLineFromSpec(FiveStationSpec());
+
+			AStation* Shim = Director->GetStationOfType(EStationType::Filter);
+			AStation* F0   = Director->GetStationByNodeRef(FNodeRef{EStationType::Filter, 0});
+			TestEqual(TEXT("shim returns Instance 0 (the 'keep evens' Filter)"), Shim, F0);
+			TestEqual(TEXT("shim returns the 'keep evens' Filter, NOT 'take top 2'"),
+				Shim ? Shim->CurrentRule : FString(),
+				FString(TEXT("keep evens")));
+		});
+	});
+
 	Describe("SpawnLineFromSpec — propagation (formerly SpawnAssemblyLine tests)", [this]()
 	{
 		It("propagates WorkerRobotMeshAsset to every spawned worker", [this]()
@@ -1018,11 +1092,11 @@ void FAssemblyLineGameModeSpec::Define()
 		});
 	});
 
-	Describe("SpawnCinematicDirector (Story 32b — shots regen from spawned stations)", [this]()
+	Describe("SpawnCinematicDirector (Story 36 — single wide overview, follow camera handles closeups)", [this]()
 	{
-		It("4-station line yields 1 wide + 4 closeup shots", [this]()
+		It("4-station line yields exactly ONE wide-overview shot (closeups handled by FollowCamera)", [this]()
 		{
-			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_CinematicShots4"));
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_CinematicWideOnly_4"));
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -1035,19 +1109,22 @@ void FAssemblyLineGameModeSpec::Define()
 
 			int32 CinDirectorCount = 0;
 			int32 ShotsConfigured = 0;
+			ACinematicCameraDirector* Cin = nullptr;
 			for (TActorIterator<ACinematicCameraDirector> It(TW.World); It; ++It)
 			{
 				++CinDirectorCount;
 				ShotsConfigured = It->Shots.Num();
+				Cin = *It;
 			}
 
 			TestEqual(TEXT("exactly one CinematicCameraDirector"), CinDirectorCount, 1);
-			TestEqual(TEXT("5 shots: 1 wide + 4 station closeups"), ShotsConfigured, 5);
+			TestEqual(TEXT("exactly 1 shot (the wide overview)"), ShotsConfigured, 1);
+			TestNotNull(TEXT("FollowCamera spawned"), Cin ? Cin->GetFollowCamera() : nullptr);
 		});
 
-		It("2-station line yields 1 wide + 2 closeup shots (proves regen, not hardcoded count)", [this]()
+		It("authors a non-empty DefaultFollowSequence (Story 36 zoom dance)", [this]()
 		{
-			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_CinematicShots2"));
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_DefaultSequence"));
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -1055,22 +1132,50 @@ void FAssemblyLineGameModeSpec::Define()
 				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
 			if (!GM) return;
 
-			const FNodeRef Gen{EStationType::Generator, 0};
-			const FNodeRef Chk{EStationType::Checker,   0};
-			const TArray<FStationNode> TwoNode = {
-				FStationNode{Gen, FString(),       {}},
-				FStationNode{Chk, FString(),    {Gen}},
-			};
-			GM->SpawnLineFromSpec(TwoNode);
+			GM->SpawnLineFromSpec(LegacyFourStationSpec());
+			GM->SpawnCinematicDirector();
+
+			ACinematicCameraDirector* Cin = nullptr;
+			for (TActorIterator<ACinematicCameraDirector> It(TW.World); It; ++It) { Cin = *It; break; }
+			TestNotNull(TEXT("cinematic spawned"), Cin);
+			if (!Cin) return;
+
+			TestTrue(TEXT("DefaultFollowSequence has keyframes"),
+				Cin->DefaultFollowSequence.Keyframes.Num() >= 2);
+		});
+
+		It("5-station mission with two Filters still yields exactly 1 wide shot (multi-instance ignored at shot level)",
+		   [this]()
+		{
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_CinematicWideOnly_5"));
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			const FNodeRef Gen {EStationType::Generator, 0};
+			const FNodeRef Flt0{EStationType::Filter,    0};
+			const FNodeRef Srt {EStationType::Sorter,    0};
+			const FNodeRef Chk {EStationType::Checker,   0};
+			const FNodeRef Flt1{EStationType::Filter,    1};
+			GM->SpawnLineFromSpec({
+				FStationNode{Gen,  FString(),         {}},
+				FStationNode{Flt0, FString(),      {Gen}},
+				FStationNode{Srt,  FString(),     {Flt0}},
+				FStationNode{Chk,  FString(),      {Srt}},
+				FStationNode{Flt1, FString(),      {Chk}},
+			});
 			GM->SpawnCinematicDirector();
 
 			int32 ShotsConfigured = 0;
 			for (TActorIterator<ACinematicCameraDirector> It(TW.World); It; ++It)
 			{
 				ShotsConfigured = It->Shots.Num();
+				break;
 			}
-
-			TestEqual(TEXT("3 shots: 1 wide + 2 station closeups"), ShotsConfigured, 3);
+			TestEqual(TEXT("still exactly 1 shot regardless of station count"), ShotsConfigured, 1);
 		});
 	});
 }

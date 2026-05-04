@@ -158,22 +158,23 @@ void FWorkerRobotSpec::Define()
 
 	Describe("Phase events", [this]()
 	{
-		It("fires OnPickedUp with the assigned station type when reaching PickUp", [this]()
+		It("fires OnPickedUp with the assigned station's FNodeRef when reaching PickUp (Story 36)", [this]()
 		{
 			FScopedTestWorld TW(TEXT("WorkerSpec_OnPickedUp"));
 			ATestSyncStation* Station = SpawnStationAt<ATestSyncStation>(TW.World, FVector::ZeroVector);
 			Station->StationType = EStationType::Filter;
+			Station->NodeRef    = FNodeRef{EStationType::Filter, 1};  // Story 36 — Instance 1 to prove FNodeRef carries through
 			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
 			Worker->WorkDuration = 0.f;
 			Worker->AssignStation(Station);
 			Station->InputSlot->SetWorldLocation(Worker->GetActorLocation());
 			Station->OutputSlot->SetWorldLocation(Worker->GetActorLocation());
 
-			EStationType Captured = EStationType::Generator;
+			FNodeRef Captured;
 			bool bFired = false;
-			Worker->OnPickedUp.AddLambda([&Captured, &bFired](EStationType St)
+			Worker->OnPickedUp.AddLambda([&Captured, &bFired](const FNodeRef& Ref)
 			{
-				Captured = St;
+				Captured = Ref;
 				bFired = true;
 			});
 
@@ -182,25 +183,27 @@ void FWorkerRobotSpec::Define()
 			TickWorker(Worker, 50, 0.05f, [&]() { return bFired; });
 
 			TestTrue(TEXT("OnPickedUp fired"), bFired);
-			TestEqual(TEXT("station type passed"), static_cast<int32>(Captured), static_cast<int32>(EStationType::Filter));
+			TestTrue(TEXT("FNodeRef carried (Filter, 1)"),
+				Captured == FNodeRef{EStationType::Filter, 1});
 		});
 
-		It("fires OnPlaced with the assigned station type when reaching Place", [this]()
+		It("fires OnPlaced with the assigned station's FNodeRef when reaching Place (Story 36)", [this]()
 		{
 			FScopedTestWorld TW(TEXT("WorkerSpec_OnPlaced"));
 			ATestSyncStation* Station = SpawnStationAt<ATestSyncStation>(TW.World, FVector::ZeroVector);
 			Station->StationType = EStationType::Sorter;
+			Station->NodeRef    = FNodeRef{EStationType::Sorter, 0};
 			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, FVector::ZeroVector);
 			Worker->WorkDuration = 0.f;
 			Worker->AssignStation(Station);
 			Station->InputSlot->SetWorldLocation(Worker->GetActorLocation());
 			Station->OutputSlot->SetWorldLocation(Worker->GetActorLocation());
 
-			EStationType Captured = EStationType::Generator;
+			FNodeRef Captured;
 			bool bFired = false;
-			Worker->OnPlaced.AddLambda([&Captured, &bFired](EStationType St)
+			Worker->OnPlaced.AddLambda([&Captured, &bFired](const FNodeRef& Ref)
 			{
-				Captured = St;
+				Captured = Ref;
 				bFired = true;
 			});
 
@@ -209,7 +212,8 @@ void FWorkerRobotSpec::Define()
 			TickWorker(Worker, 100, 0.05f, [&]() { return bFired; });
 
 			TestTrue(TEXT("OnPlaced fired"), bFired);
-			TestEqual(TEXT("station type passed"), static_cast<int32>(Captured), static_cast<int32>(EStationType::Sorter));
+			TestTrue(TEXT("FNodeRef carried (Sorter, 0)"),
+				Captured == FNodeRef{EStationType::Sorter, 0});
 		});
 	});
 

@@ -206,6 +206,51 @@ void FOrchestratorParserSpec::Define()
 			TestFalse(TEXT("malformed returns false"), bOk);
 		});
 	});
+
+	Describe("Multi-instance per Kind (Story 35)", [this]()
+	{
+		It("parses a 5-node spec with two Filters into FNodeRef{Filter,0} + FNodeRef{Filter,1} "
+		   "(one per spec entry, distinct Instances)", [this]()
+		{
+			// The operator's exact 5-stage mission shape: generate, filter
+			// evens, sort desc, check, then a SECOND filter taking only
+			// the top 2. Two Filter nodes — Story 32b would have rejected
+			// upstream (duplicate-kind); Story 35 accepts.
+			const FString Spec = TEXT(
+				"{\"nodes\":["
+				"{\"id\":\"gen\",\"type\":\"Generator\",\"rule\":\"gen20\"},"
+				"{\"id\":\"flt0\",\"type\":\"Filter\",\"rule\":\"keep evens\",\"parents\":[\"gen\"]},"
+				"{\"id\":\"srt\",\"type\":\"Sorter\",\"rule\":\"desc\",\"parents\":[\"flt0\"]},"
+				"{\"id\":\"chk\",\"type\":\"Checker\",\"rule\":\"verify\",\"parents\":[\"srt\"]},"
+				"{\"id\":\"flt1\",\"type\":\"Filter\",\"rule\":\"top 2\",\"parents\":[\"chk\"]}"
+				"]}");
+			TArray<FStationNode> Out;
+			TestTrue(TEXT("5-node multi-instance spec parses"),
+				OrchestratorParser::ParseDAGSpec(Spec, Out));
+			TestEqual(TEXT("5 nodes"), Out.Num(), 5);
+			if (Out.Num() != 5) return;
+
+			// Filter/0 is the second node (after Generator); Filter/1 is the fifth.
+			TestTrue(TEXT("[1] is Filter/0"),
+				Out[1].Ref == FNodeRef{EStationType::Filter, 0});
+			TestEqual(TEXT("[1] rule is 'keep evens'"),
+				Out[1].Rule, FString(TEXT("keep evens")));
+
+			TestTrue(TEXT("[4] is Filter/1 (the second Filter instance)"),
+				Out[4].Ref == FNodeRef{EStationType::Filter, 1});
+			TestEqual(TEXT("[4] rule is 'top 2'"),
+				Out[4].Rule, FString(TEXT("top 2")));
+
+			// Edges resolve correctly across multi-instance: flt1's parent
+			// is the Checker (not flt0), per the JSON 'parents' field.
+			TestEqual(TEXT("Filter/1 has 1 parent"), Out[4].Parents.Num(), 1);
+			if (Out[4].Parents.Num() == 1)
+			{
+				TestTrue(TEXT("Filter/1's parent is Checker/0"),
+					Out[4].Parents[0] == FNodeRef{EStationType::Checker, 0});
+			}
+		});
+	});
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -201,7 +201,7 @@ void AWorkerRobot::EnterState(EWorkerState NewState)
 		break;
 	case EWorkerState::PickUp:
 		AttachBucket();
-		if (AssignedStation) OnPickedUp.Broadcast(AssignedStation->StationType);
+		if (AssignedStation) OnPickedUp.Broadcast(AssignedStation->NodeRef);
 		EnterState(EWorkerState::MoveToWorkPos);
 		return;
 	case EWorkerState::MoveToWorkPos:
@@ -217,7 +217,7 @@ void AWorkerRobot::EnterState(EWorkerState NewState)
 				FAttachmentTransformRules::SnapToTargetIncludingScale);
 			CurrentBucket->SetActorRelativeLocation(FVector::ZeroVector);
 		}
-		if (AssignedStation) OnStartedWorking.Broadcast(AssignedStation->StationType);
+		if (AssignedStation) OnStartedWorking.Broadcast(AssignedStation->NodeRef);
 		break;
 	case EWorkerState::MoveToOutput:
 		// Worker picks the bucket back up from the worktable for delivery.
@@ -235,7 +235,7 @@ void AWorkerRobot::EnterState(EWorkerState NewState)
 		break;
 	case EWorkerState::Place:
 		if (ToSlotPtr.IsValid()) DetachBucketAt(ToSlotPtr.Get());
-		if (AssignedStation) OnPlaced.Broadcast(AssignedStation->StationType);
+		if (AssignedStation) OnPlaced.Broadcast(AssignedStation->NodeRef);
 		EnterState(EWorkerState::ReturnHome);
 		return;
 	case EWorkerState::ReturnHome:
@@ -335,7 +335,7 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 							Self->LastResult = Result;
 							if (Self->AssignedStation)
 							{
-								Self->OnFinishedWorking.Broadcast(Self->AssignedStation->StationType);
+								Self->OnFinishedWorking.Broadcast(Self->AssignedStation->NodeRef);
 							}
 							Self->EnterState(EWorkerState::MoveToOutput);
 						}
@@ -343,7 +343,7 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 			}
 			else
 			{
-				if (AssignedStation) OnFinishedWorking.Broadcast(AssignedStation->StationType);
+				if (AssignedStation) OnFinishedWorking.Broadcast(AssignedStation->NodeRef);
 				EnterState(EWorkerState::MoveToOutput);
 			}
 			// Only park in Idle if the completion delegate hasn't already advanced us.
