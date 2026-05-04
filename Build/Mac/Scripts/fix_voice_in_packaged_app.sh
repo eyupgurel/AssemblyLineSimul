@@ -25,10 +25,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DEFAULT_APP="$PROJECT_ROOT/Saved/StagedBuilds/Mac/AssemblyLineSimul.app"
 
-APP_PATH="${1:-$DEFAULT_APP}"
+# Pick APP_PATH from the first POSITIONAL arg (one that doesn't start
+# with --). Without this, `./fix.sh --reset-permission` would mistakenly
+# treat `--reset-permission` as the app path and bail out.
+APP_PATH="$DEFAULT_APP"
 RESET_PERMISSION=0
 for arg in "$@"; do
-    [[ "$arg" == "--reset-permission" ]] && RESET_PERMISSION=1
+    case "$arg" in
+        --reset-permission) RESET_PERMISSION=1 ;;
+        --*)                echo "Warning: unknown flag '$arg'" >&2 ;;
+        *)                  APP_PATH="$arg" ;;
+    esac
 done
 
 if [[ ! -d "$APP_PATH" ]]; then

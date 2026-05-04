@@ -1,11 +1,17 @@
 # Unreal Engine generated/derived directories — never commit
 Binaries/
-Build/
 DerivedDataCache/
 Intermediate/
 Saved/
 Plugins/*/Binaries/
 Plugins/*/Intermediate/
+
+# Build/ is mostly engine-generated stable assets we WANT to ship (the
+# entitlements + Info.plist template under Build/Mac/Resources/, the
+# post-stage helper script under Build/Mac/Scripts/). Ignore only the
+# genuinely-noisy bits.
+Build/Mac/*.PackageVersionCounter
+Build/Mac/FileOpenOrder/
 
 # Belt-and-suspenders: explicitly exclude API keys (Anthropic + OpenAI)
 # and the entire secrets folder regardless of where it ends up.
