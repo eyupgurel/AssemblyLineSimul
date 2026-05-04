@@ -145,19 +145,24 @@ void FAgentChatSubsystemSpec::Define()
 
 			int32 BroadcastCount = 0;
 			TArray<FStationNode> CapturedNodes;
-			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>& Nodes)
+			TMap<EStationType, FString> CapturedPrompts;
+			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>& Nodes,
+				const TMap<EStationType, FString>& Prompts)
 			{
 				++BroadcastCount;
 				CapturedNodes = Nodes;
+				CapturedPrompts = Prompts;
 			});
 
 			// Synthesise a Claude reply matching the OrchestratorChatPromptTemplate
-			// contract: {"reply": "...", "dag": {"nodes": [...]}}
+			// contract: {"reply": "...", "dag": {"nodes": [...]}}.
+			// Story 33b — also includes a `prompts` object to verify the new payload.
 			const FString FakeReply = TEXT(
 				"{\"reply\":\"On it.\",\"dag\":{\"nodes\":["
 				"{\"id\":\"g\",\"type\":\"Generator\",\"rule\":\"r1\"},"
 				"{\"id\":\"f\",\"type\":\"Filter\",\"rule\":\"r2\",\"parents\":[\"g\"]}"
-				"]}}");
+				"]},\"prompts\":{\"Generator\":\"You crank out fresh batches.\","
+				"\"Filter\":\"You sift the wheat from the chaff.\"}}");
 			Sub->HandleClaudeResponse(EStationType::Orchestrator, /*bSuccess=*/true, FakeReply);
 
 			TestEqual(TEXT("OnDAGProposed fired exactly once"), BroadcastCount, 1);
@@ -169,6 +174,39 @@ void FAgentChatSubsystemSpec::Define()
 				TestTrue(TEXT("[1] is Filter/0"),
 					CapturedNodes[1].Ref == FNodeRef{EStationType::Filter, 0});
 			}
+			// Story 33b — prompts payload propagated.
+			TestEqual(TEXT("captured 2 prompts"), CapturedPrompts.Num(), 2);
+			TestTrue(TEXT("Generator prompt prose preserved"),
+				CapturedPrompts.FindRef(EStationType::Generator).Contains(TEXT("crank out")));
+			TestTrue(TEXT("Filter prompt prose preserved"),
+				CapturedPrompts.FindRef(EStationType::Filter).Contains(TEXT("wheat")));
+		});
+
+		It("broadcasts OnDAGProposed even when Claude wraps the JSON in prose / "
+		   "```json fences (proves we feed ParsePlan the cleaned inner JSON, "
+		   "not the raw Response)", [this]()
+		{
+			UGameInstance* GI = NewObject<UGameInstance>(GetTransientPackage());
+			UAgentChatSubsystem* Sub = NewObject<UAgentChatSubsystem>(GI);
+			if (!Sub) return;
+
+			int32 BroadcastCount = 0;
+			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>&,
+				const TMap<EStationType, FString>&)
+			{
+				++BroadcastCount;
+			});
+
+			// Realistic Claude reply with prose around a fenced JSON object —
+			// ExtractJsonObject pulls out the {...} substring; ParsePlan must
+			// be fed that, not the raw Response.
+			const FString ChattyReply = TEXT(
+				"Sure! Here's the spec:\n```json\n"
+				"{\"reply\":\"on it\",\"dag\":{\"nodes\":["
+				"{\"id\":\"g\",\"type\":\"Generator\",\"rule\":\"r1\"}]}}\n```\nLet me know.");
+			Sub->HandleClaudeResponse(EStationType::Orchestrator, /*bSuccess=*/true, ChattyReply);
+
+			TestEqual(TEXT("OnDAGProposed fired despite prose wrapper"), BroadcastCount, 1);
 		});
 
 		It("does NOT broadcast OnDAGProposed when the Orchestrator's reply has "
@@ -179,7 +217,8 @@ void FAgentChatSubsystemSpec::Define()
 			if (!Sub) return;
 
 			int32 BroadcastCount = 0;
-			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>&)
+			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>&,
+				const TMap<EStationType, FString>&)
 			{
 				++BroadcastCount;
 			});
@@ -198,7 +237,8 @@ void FAgentChatSubsystemSpec::Define()
 			if (!Sub) return;
 
 			int32 BroadcastCount = 0;
-			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>&)
+			Sub->OnDAGProposed.AddLambda([&](const TArray<FStationNode>&,
+				const TMap<EStationType, FString>&)
 			{
 				++BroadcastCount;
 			});

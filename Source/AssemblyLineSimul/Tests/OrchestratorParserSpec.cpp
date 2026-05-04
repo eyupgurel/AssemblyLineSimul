@@ -137,6 +137,75 @@ void FOrchestratorParserSpec::Define()
 			TestFalse(TEXT("undeclared-parent returns false"), bOk);
 		});
 	});
+
+	Describe("ParsePlan (Story 33b — full reply with dag + prompts)", [this]()
+	{
+		It("extracts the prompts object alongside dag", [this]()
+		{
+			const FString FullReply = TEXT(
+				"{\"reply\":\"sure thing\","
+				"\"dag\":{\"nodes\":["
+				"{\"id\":\"g\",\"type\":\"Generator\",\"rule\":\"r1\"},"
+				"{\"id\":\"f\",\"type\":\"Filter\",\"rule\":\"r2\",\"parents\":[\"g\"]}"
+				"]},"
+				"\"prompts\":{"
+				"\"Generator\":\"You are the source of fresh batches.\","
+				"\"Filter\":\"You sift the wheat from the chaff.\""
+				"}}");
+			TArray<FStationNode> Nodes;
+			TMap<EStationType, FString> Prompts;
+			const bool bOk = OrchestratorParser::ParsePlan(FullReply, Nodes, Prompts);
+			TestTrue(TEXT("ParsePlan succeeded"), bOk);
+			TestEqual(TEXT("2 nodes parsed"), Nodes.Num(), 2);
+			TestEqual(TEXT("2 prompts parsed"), Prompts.Num(), 2);
+			TestTrue(TEXT("Generator prompt prose preserved"),
+				Prompts.FindRef(EStationType::Generator).Contains(TEXT("source of fresh batches")));
+			TestTrue(TEXT("Filter prompt prose preserved"),
+				Prompts.FindRef(EStationType::Filter).Contains(TEXT("wheat from the chaff")));
+		});
+
+		It("returns empty prompts map when the prompts field is absent (non-fatal)", [this]()
+		{
+			const FString DagOnly = TEXT(
+				"{\"reply\":\"sure\","
+				"\"dag\":{\"nodes\":[{\"id\":\"g\",\"type\":\"Generator\",\"rule\":\"\"}]}}");
+			TArray<FStationNode> Nodes;
+			TMap<EStationType, FString> Prompts;
+			const bool bOk = OrchestratorParser::ParsePlan(DagOnly, Nodes, Prompts);
+			TestTrue(TEXT("missing prompts is non-fatal"), bOk);
+			TestEqual(TEXT("1 node parsed"), Nodes.Num(), 1);
+			TestEqual(TEXT("0 prompts"), Prompts.Num(), 0);
+		});
+
+		It("logs Warning and skips entries with unknown station-type keys", [this]()
+		{
+			AddExpectedError(TEXT("unknown station type"),
+				EAutomationExpectedErrorFlags::Contains, /*ExpectedNumOccurrences=*/1);
+
+			const FString WithBadKey = TEXT(
+				"{\"reply\":\"\","
+				"\"dag\":{\"nodes\":[{\"id\":\"g\",\"type\":\"Generator\",\"rule\":\"\"}]},"
+				"\"prompts\":{\"Generator\":\"valid\",\"FooBar\":\"skipped\"}}");
+			TArray<FStationNode> Nodes;
+			TMap<EStationType, FString> Prompts;
+			const bool bOk = OrchestratorParser::ParsePlan(WithBadKey, Nodes, Prompts);
+			TestTrue(TEXT("ParsePlan still succeeds with unknown prompt key"), bOk);
+			TestEqual(TEXT("only the valid Generator entry kept"), Prompts.Num(), 1);
+			TestTrue(TEXT("Generator entry preserved"),
+				Prompts.Contains(EStationType::Generator));
+		});
+
+		It("returns false on malformed JSON (delegates dag failure)", [this]()
+		{
+			AddExpectedError(TEXT("ParsePlan"),
+				EAutomationExpectedErrorFlags::Contains, /*ExpectedNumOccurrences=*/1);
+			TArray<FStationNode> Nodes;
+			TMap<EStationType, FString> Prompts;
+			const bool bOk = OrchestratorParser::ParsePlan(
+				TEXT("not even json"), Nodes, Prompts);
+			TestFalse(TEXT("malformed returns false"), bOk);
+		});
+	});
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -5,6 +5,10 @@
 
 #include "AgentPromptLibrary.h"
 #include "AssemblyLineTypes.h"
+#include "HAL/FileManager.h"
+#include "HAL/PlatformFileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 DEFINE_SPEC(FAgentPromptLibrarySpec,
 	"AssemblyLineSimul.AgentPromptLibrary",
@@ -114,6 +118,114 @@ void FAgentPromptLibrarySpec::Define()
 				Mission.Contains(TEXT("sort"), ESearchCase::IgnoreCase));
 			TestTrue(TEXT("mentions checking"),
 				Mission.Contains(TEXT("check"), ESearchCase::IgnoreCase));
+		});
+	});
+
+	Describe("Saved/Agents precedence over Content/Agents (Story 33b)", [this]()
+	{
+		// Each test in this Describe writes to Saved/Agents/<Kind>.md. The
+		// AgentPromptLibrary cache is process-lifetime, so we must invalidate
+		// before AND after each test to avoid leaking state into adjacent
+		// tests (and to force a fresh disk read).
+		auto SavedAgentsDir = []()
+		{
+			return FPaths::ProjectSavedDir() / TEXT("Agents");
+		};
+
+		auto WriteSavedAgent = [SavedAgentsDir](EStationType Kind, const FString& Body)
+		{
+			const TCHAR* Filename = TEXT("");
+			switch (Kind)
+			{
+			case EStationType::Generator:    Filename = TEXT("Generator.md");    break;
+			case EStationType::Filter:       Filename = TEXT("Filter.md");       break;
+			case EStationType::Sorter:       Filename = TEXT("Sorter.md");       break;
+			case EStationType::Checker:      Filename = TEXT("Checker.md");      break;
+			case EStationType::Orchestrator: Filename = TEXT("Orchestrator.md"); break;
+			}
+			IFileManager::Get().MakeDirectory(*SavedAgentsDir(), /*Tree=*/true);
+			const FString Path = SavedAgentsDir() / Filename;
+			FFileHelper::SaveStringToFile(Body, *Path);
+			return Path;
+		};
+
+		auto DeleteSavedAgent = [SavedAgentsDir](EStationType Kind)
+		{
+			const TCHAR* Filename = TEXT("");
+			switch (Kind)
+			{
+			case EStationType::Generator:    Filename = TEXT("Generator.md");    break;
+			case EStationType::Filter:       Filename = TEXT("Filter.md");       break;
+			case EStationType::Sorter:       Filename = TEXT("Sorter.md");       break;
+			case EStationType::Checker:      Filename = TEXT("Checker.md");      break;
+			case EStationType::Orchestrator: Filename = TEXT("Orchestrator.md"); break;
+			}
+			const FString Path = SavedAgentsDir() / Filename;
+			IFileManager::Get().Delete(*Path);
+		};
+
+		It("Saved/Agents/<Kind>.md takes precedence over Content/Agents/<Kind>.md", [this, WriteSavedAgent, DeleteSavedAgent]()
+		{
+			// Sorter.md in Content has DefaultRule "Sort the bucket strictly ascending."
+			// We write a different DefaultRule in Saved/ and assert the loader returns it.
+			const FString SavedBody = TEXT(
+				"# Sorter agent (saved override for Story 33b test)\n\n"
+				"## DefaultRule\n"
+				"OVERRIDDEN_BY_SAVED\n\n"
+				"## Role\n"
+				"Saved-tier role text.\n\n"
+				"## ProcessBucketPrompt\n"
+				"(unused in this test)\n");
+			WriteSavedAgent(EStationType::Sorter, SavedBody);
+			AgentPromptLibrary::InvalidateCache();
+
+			const FString Rule = AgentPromptLibrary::LoadAgentSection(
+				EStationType::Sorter, TEXT("DefaultRule"));
+			TestEqual(TEXT("Saved/ DefaultRule wins"), Rule, FString(TEXT("OVERRIDDEN_BY_SAVED")));
+
+			// Cleanup so adjacent tests see the Content fallback.
+			DeleteSavedAgent(EStationType::Sorter);
+			AgentPromptLibrary::InvalidateCache();
+		});
+
+		It("falls back to Content/Agents/ when Saved/Agents/<Kind>.md is absent", [this, DeleteSavedAgent]()
+		{
+			DeleteSavedAgent(EStationType::Sorter);
+			AgentPromptLibrary::InvalidateCache();
+			const FString Rule = AgentPromptLibrary::LoadAgentSection(
+				EStationType::Sorter, TEXT("DefaultRule"));
+			// Content/Agents/Sorter.md DefaultRule is the canonical demo text.
+			TestTrue(TEXT("Content fallback returns the canonical Sorter rule"),
+				Rule.Contains(TEXT("ascending"), ESearchCase::IgnoreCase) ||
+				Rule.Contains(TEXT("sort"),      ESearchCase::IgnoreCase));
+		});
+
+		It("InvalidateCache forces a fresh disk read on the next LoadAgentSection", [this, WriteSavedAgent, DeleteSavedAgent]()
+		{
+			// First, prime the cache from Content/.
+			DeleteSavedAgent(EStationType::Sorter);
+			AgentPromptLibrary::InvalidateCache();
+			const FString FromContent = AgentPromptLibrary::LoadAgentSection(
+				EStationType::Sorter, TEXT("DefaultRule"));
+
+			// Now write a Saved override but DON'T invalidate yet — cache
+			// should still serve the Content value.
+			WriteSavedAgent(EStationType::Sorter,
+				TEXT("# Sorter\n\n## DefaultRule\nFRESH_CACHE_BUST_VALUE\n"));
+			const FString StillCached = AgentPromptLibrary::LoadAgentSection(
+				EStationType::Sorter, TEXT("DefaultRule"));
+			TestEqual(TEXT("without invalidate, cache still serves Content value"),
+				StillCached, FromContent);
+
+			// Now invalidate and re-read — should pick up Saved override.
+			AgentPromptLibrary::InvalidateCache();
+			const FString FreshlyLoaded = AgentPromptLibrary::LoadAgentSection(
+				EStationType::Sorter, TEXT("DefaultRule"));
+			TestEqual(TEXT("after invalidate, Saved override is read"),
+				FreshlyLoaded, FString(TEXT("FRESH_CACHE_BUST_VALUE")));
+
+			DeleteSavedAgent(EStationType::Sorter);
+			AgentPromptLibrary::InvalidateCache();
 		});
 	});
 

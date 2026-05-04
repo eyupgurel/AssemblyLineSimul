@@ -19,37 +19,22 @@ namespace
 	}
 }
 
-namespace OrchestratorParser
+namespace
 {
-	bool ParseDAGSpec(const FString& JsonText, TArray<FStationNode>& OutNodes)
+	// Shared parse path. Caller passes a Root JSON object that already has
+	// the `nodes` array at the top level (the original ParseDAGSpec shape).
+	// ParsePlan finds the nodes array nested under `dag` and calls in.
+	bool PopulateNodesFromArray(const TArray<TSharedPtr<FJsonValue>>& Nodes,
+		TArray<FStationNode>& OutNodes)
 	{
-		OutNodes.Reset();
-
-		TSharedPtr<FJsonObject> Root;
-		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonText);
-		if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
-		{
-			UE_LOG(LogOrchestrator, Error,
-				TEXT("ParseDAGSpec: malformed JSON: %s"), *JsonText);
-			return false;
-		}
-
-		const TArray<TSharedPtr<FJsonValue>>* Nodes = nullptr;
-		if (!Root->TryGetArrayField(TEXT("nodes"), Nodes) || !Nodes)
-		{
-			UE_LOG(LogOrchestrator, Error,
-				TEXT("ParseDAGSpec: top-level 'nodes' array missing"));
-			return false;
-		}
-
 		// First pass — assign FNodeRef per JSON ID. Instance is the
 		// zero-indexed position of this kind in the spec.
 		TMap<FString, FNodeRef> IdToRef;
 		TMap<EStationType, int32> InstanceCounters;
-		IdToRef.Reserve(Nodes->Num());
-		OutNodes.Reserve(Nodes->Num());
+		IdToRef.Reserve(Nodes.Num());
+		OutNodes.Reserve(Nodes.Num());
 
-		for (const TSharedPtr<FJsonValue>& Item : *Nodes)
+		for (const TSharedPtr<FJsonValue>& Item : Nodes)
 		{
 			const TSharedPtr<FJsonObject>* NodeObj = nullptr;
 			if (!Item.IsValid() || !Item->TryGetObject(NodeObj) || !NodeObj || !NodeObj->IsValid())
@@ -89,10 +74,10 @@ namespace OrchestratorParser
 		}
 
 		// Second pass — resolve parent IDs against the IdToRef map.
-		for (int32 i = 0; i < Nodes->Num(); ++i)
+		for (int32 i = 0; i < Nodes.Num(); ++i)
 		{
 			const TSharedPtr<FJsonObject>* NodeObj = nullptr;
-			(*Nodes)[i]->TryGetObject(NodeObj);
+			Nodes[i]->TryGetObject(NodeObj);
 
 			const TArray<TSharedPtr<FJsonValue>>* Parents = nullptr;
 			if (!(*NodeObj)->TryGetArrayField(TEXT("parents"), Parents) || !Parents)
@@ -120,6 +105,98 @@ namespace OrchestratorParser
 					return false;
 				}
 				OutNodes[i].Parents.Add(*ParentRef);
+			}
+		}
+
+		return true;
+	}
+}
+
+namespace OrchestratorParser
+{
+	bool ParseDAGSpec(const FString& JsonText, TArray<FStationNode>& OutNodes)
+	{
+		OutNodes.Reset();
+
+		TSharedPtr<FJsonObject> Root;
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonText);
+		if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+		{
+			UE_LOG(LogOrchestrator, Error,
+				TEXT("ParseDAGSpec: malformed JSON: %s"), *JsonText);
+			return false;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* Nodes = nullptr;
+		if (!Root->TryGetArrayField(TEXT("nodes"), Nodes) || !Nodes)
+		{
+			UE_LOG(LogOrchestrator, Error,
+				TEXT("ParseDAGSpec: top-level 'nodes' array missing"));
+			return false;
+		}
+
+		return PopulateNodesFromArray(*Nodes, OutNodes);
+	}
+
+	bool ParsePlan(const FString& JsonText,
+		TArray<FStationNode>& OutNodes,
+		TMap<EStationType, FString>& OutPromptsByKind)
+	{
+		OutNodes.Reset();
+		OutPromptsByKind.Reset();
+
+		// Parse the full reply object: {"reply":..., "dag":{"nodes":[...]},
+		// "prompts":{...}}.
+		TSharedPtr<FJsonObject> Root;
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonText);
+		if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+		{
+			UE_LOG(LogOrchestrator, Error,
+				TEXT("ParsePlan: malformed JSON: %s"), *JsonText);
+			return false;
+		}
+
+		// `dag` is required.
+		const TSharedPtr<FJsonObject>* DagObj = nullptr;
+		if (!Root->TryGetObjectField(TEXT("dag"), DagObj) || !DagObj || !DagObj->IsValid())
+		{
+			UE_LOG(LogOrchestrator, Error,
+				TEXT("ParsePlan: 'dag' object missing or not an object"));
+			return false;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* DagNodes = nullptr;
+		if (!(*DagObj)->TryGetArrayField(TEXT("nodes"), DagNodes) || !DagNodes)
+		{
+			UE_LOG(LogOrchestrator, Error,
+				TEXT("ParsePlan: 'dag.nodes' array missing"));
+			return false;
+		}
+
+		if (!PopulateNodesFromArray(*DagNodes, OutNodes))
+		{
+			return false;  // PopulateNodesFromArray already logged
+		}
+
+		// `prompts` is optional.
+		const TSharedPtr<FJsonObject>* PromptsObj = nullptr;
+		if (Root->TryGetObjectField(TEXT("prompts"), PromptsObj) && PromptsObj && PromptsObj->IsValid())
+		{
+			for (const auto& Pair : (*PromptsObj)->Values)
+			{
+				EStationType Kind;
+				if (!TryParseStationType(Pair.Key, Kind))
+				{
+					UE_LOG(LogOrchestrator, Error,
+						TEXT("ParsePlan: 'prompts' entry has unknown station type '%s' — skipped"),
+						*Pair.Key);
+					continue;
+				}
+				FString Prose;
+				if (Pair.Value.IsValid() && Pair.Value->TryGetString(Prose))
+				{
+					OutPromptsByKind.Add(Kind, MoveTemp(Prose));
+				}
 			}
 		}
 

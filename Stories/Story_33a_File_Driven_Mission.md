@@ -32,10 +32,12 @@ is fiddly, headless walkthroughs).
   `HandleDAGProposed` pipeline takes over. No-op (with Warning log)
   if the Mission section is empty.
 
-- **AC33a.3 — Enter key binding.** Pressing **Enter** in PIE invokes
-  `SendDefaultMission()`. Wired through the same Enhanced Input
-  pattern as the existing Space-for-voice binding. Independent of
-  Space — both work in the same session.
+- **AC33a.3 — `M` key binding.** Pressing **M** (for "Mission") in
+  PIE invokes `SendDefaultMission()`. Wired through the same Enhanced
+  Input pattern as the existing Space-for-voice binding. Independent
+  of Space — both work in the same session. (Originally bound to
+  Enter; PIE intercepts Enter for editor shortcuts so it never reached
+  the game viewport — switched to M post-PIE-check.)
 
 - **AC33a.4 — `bAutoMissionAtBoot` flag.** New
   `UPROPERTY(EditAnywhere) bool bAutoMissionAtBoot = false;` on

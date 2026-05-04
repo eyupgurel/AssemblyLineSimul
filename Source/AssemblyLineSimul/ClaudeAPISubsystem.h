@@ -18,8 +18,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Claude")
 	FString Model = TEXT("claude-sonnet-4-6");
 
+	// Story 33b raised this from 512 to 4096. The Orchestrator's reply
+	// (DAG spec + per-agent Role prose) routinely exceeds 512 tokens —
+	// truncation results in a malformed JSON object that ParsePlan can't
+	// recover from, silently dropping the spawn. 4096 leaves headroom
+	// for ~4 stations with thoughtful Role paragraphs each.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Claude")
-	int32 MaxTokens = 512;
+	int32 MaxTokens = 4096;
 
 	bool HasAPIKey() const { return !APIKey.IsEmpty(); }
 

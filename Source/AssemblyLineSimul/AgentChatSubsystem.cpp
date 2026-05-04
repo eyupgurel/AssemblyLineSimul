@@ -103,10 +103,13 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 	FString Reply;
 	FString NewRule;
 	TSharedPtr<FJsonObject> Root;
+	// Hoisted so the Orchestrator branch below can pass the cleaned inner
+	// JSON (post-ExtractJsonObject) to ParsePlan. Passing the raw Response
+	// would fail when Claude wraps the JSON in prose or ```json fences.
+	FString JsonStr;
 
 	if (bSuccess)
 	{
-		FString JsonStr;
 		if (ExtractJsonObject(Response, JsonStr))
 		{
 			const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
@@ -129,25 +132,39 @@ void UAgentChatSubsystem::HandleClaudeResponse(EStationType StationType, bool bS
 	}
 
 	// Story 32b — Orchestrator-only: if the reply contained a non-null `dag`
-	// object, re-serialize it back to JSON text and run it through
-	// OrchestratorParser. On a successful parse, broadcast OnDAGProposed so
-	// AAssemblyLineGameMode can spawn the line. dag: null (small-talk) or
-	// non-Orchestrator agents skip this entirely.
+	// object, run it through OrchestratorParser. On a successful parse,
+	// broadcast OnDAGProposed so AAssemblyLineGameMode can spawn the line.
+	// dag: null (small-talk) or non-Orchestrator agents skip this entirely.
+	//
+	// Story 33b — also extracts the optional sibling `prompts` object via
+	// ParsePlan so the spawn handler can write Orchestrator-authored
+	// per-agent .md files before the line materializes.
 	if (bSuccess && StationType == EStationType::Orchestrator && Root.IsValid())
 	{
 		const TSharedPtr<FJsonValue> DagValue = Root->TryGetField(TEXT("dag"));
 		if (DagValue.IsValid() && DagValue->Type == EJson::Object)
 		{
-			FString DagJson;
-			const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&DagJson);
-			FJsonSerializer::Serialize(DagValue->AsObject().ToSharedRef(), Writer);
 			TArray<FStationNode> Nodes;
-			if (OrchestratorParser::ParseDAGSpec(DagJson, Nodes))
+			TMap<EStationType, FString> PromptsByKind;
+			// Pass JsonStr (the post-extraction inner JSON), not Response —
+			// Claude often wraps the actual JSON in prose / fences and
+			// ParsePlan would fail on that.
+			if (OrchestratorParser::ParsePlan(JsonStr, Nodes, PromptsByKind))
 			{
 				UE_LOG(LogAgentChat, Display,
-					TEXT("[Orchestrator] DAG accepted (%d nodes) — broadcasting OnDAGProposed"),
-					Nodes.Num());
-				OnDAGProposed.Broadcast(Nodes);
+					TEXT("[Orchestrator] Plan accepted (%d nodes, %d prompts) — broadcasting OnDAGProposed"),
+					Nodes.Num(), PromptsByKind.Num());
+				OnDAGProposed.Broadcast(Nodes, PromptsByKind);
+			}
+			else
+			{
+				// Most common cause: Claude's reply was truncated at MaxTokens
+				// mid-JSON, leaving an unparseable object. Surface so the
+				// operator doesn't wonder why the line never spawned.
+				UE_LOG(LogAgentChat, Warning,
+					TEXT("[Orchestrator] dag-shaped reply received but ParsePlan failed — "
+					     "likely truncated (raise UClaudeAPISubsystem::MaxTokens) or malformed. "
+					     "Inner JSON: %s"), *JsonStr);
 			}
 		}
 	}

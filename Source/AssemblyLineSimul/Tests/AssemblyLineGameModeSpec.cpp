@@ -4,6 +4,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "AgentChatSubsystem.h"
+#include "AgentPromptLibrary.h"
 #include "AssemblyLineDirector.h"
 #include "AssemblyLineGameMode.h"
 #include "AssemblyLineTypes.h"
@@ -21,6 +22,9 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 namespace AssemblyLineGameModeTests
 {
@@ -401,6 +405,122 @@ void FAssemblyLineGameModeSpec::Define()
 				TestTrue(TEXT("tile mesh is the assigned FloorMesh"),
 					Smc->GetStaticMesh() == TestMesh);
 			}
+		});
+	});
+
+	Describe("HandleDAGProposed → WriteOrchestratorAuthoredPrompts (Story 33b)", [this]()
+	{
+		auto SavedAgentMdPath = [](EStationType Kind) -> FString
+		{
+			const TCHAR* Filename = TEXT("");
+			switch (Kind)
+			{
+			case EStationType::Generator:    Filename = TEXT("Generator.md");    break;
+			case EStationType::Filter:       Filename = TEXT("Filter.md");       break;
+			case EStationType::Sorter:       Filename = TEXT("Sorter.md");       break;
+			case EStationType::Checker:      Filename = TEXT("Checker.md");      break;
+			case EStationType::Orchestrator: Filename = TEXT("Orchestrator.md"); break;
+			}
+			return FPaths::ProjectSavedDir() / TEXT("Agents") / Filename;
+		};
+
+		auto CleanupSavedAgents = [SavedAgentMdPath]()
+		{
+			for (EStationType K : {EStationType::Generator, EStationType::Filter,
+				EStationType::Sorter, EStationType::Checker, EStationType::Orchestrator})
+			{
+				IFileManager::Get().Delete(*SavedAgentMdPath(K));
+			}
+			AgentPromptLibrary::InvalidateCache();
+		};
+
+		It("writes Saved/Agents/<Kind>.md for every entry in PromptsByKind, with "
+		   "the Orchestrator-authored Role embedded and the static ProcessBucketPrompt "
+		   "preserved verbatim", [this, SavedAgentMdPath, CleanupSavedAgents]()
+		{
+			CleanupSavedAgents();
+
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_WriteAuthoredPrompts"));
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			const FNodeRef Gen{EStationType::Generator, 0};
+			const FNodeRef Flt{EStationType::Filter,    0};
+			const TArray<FStationNode> Spec = {
+				FStationNode{Gen, TEXT("crank-out-numbers"),    {}},
+				FStationNode{Flt, TEXT("keep-only-the-primes"), {Gen}},
+			};
+			TMap<EStationType, FString> Prompts;
+			Prompts.Add(EStationType::Generator,
+				TEXT("You are the source of fresh integer batches for this mission."));
+			Prompts.Add(EStationType::Filter,
+				TEXT("You sift the wheat from the chaff for this mission."));
+
+			GM->WriteOrchestratorAuthoredPrompts(Spec, Prompts);
+
+			// File presence.
+			TestTrue(TEXT("Saved/Agents/Generator.md exists"),
+				IFileManager::Get().FileExists(*SavedAgentMdPath(EStationType::Generator)));
+			TestTrue(TEXT("Saved/Agents/Filter.md exists"),
+				IFileManager::Get().FileExists(*SavedAgentMdPath(EStationType::Filter)));
+
+			// Generator file contents — Role authored, Rule from spec, ProcessBucketPrompt
+			// from the static template (so JSON-result parsing remains valid).
+			FString GenContent;
+			FFileHelper::LoadFileToString(GenContent, *SavedAgentMdPath(EStationType::Generator));
+			TestTrue(TEXT("Generator.md contains Orchestrator-authored Role"),
+				GenContent.Contains(TEXT("source of fresh integer batches")));
+			TestTrue(TEXT("Generator.md contains DefaultRule from the spec"),
+				GenContent.Contains(TEXT("crank-out-numbers")));
+			TestTrue(TEXT("Generator.md preserves the static ProcessBucketPrompt JSON contract"),
+				GenContent.Contains(TEXT("{\"result\":[<integers>]}")));
+
+			// Filter file — same structure.
+			FString FltContent;
+			FFileHelper::LoadFileToString(FltContent, *SavedAgentMdPath(EStationType::Filter));
+			TestTrue(TEXT("Filter.md contains Orchestrator-authored Role"),
+				FltContent.Contains(TEXT("wheat from the chaff")));
+			TestTrue(TEXT("Filter.md contains DefaultRule from the spec"),
+				FltContent.Contains(TEXT("keep-only-the-primes")));
+			TestTrue(TEXT("Filter.md preserves the static ProcessBucketPrompt {{rule}} placeholder"),
+				FltContent.Contains(TEXT("{{rule}}")));
+
+			CleanupSavedAgents();
+		});
+
+		It("writing a Checker prompt also preserves the static DerivedRuleTemplate "
+		   "section so the Checker can still compose ancestor rules", [this, SavedAgentMdPath, CleanupSavedAgents]()
+		{
+			CleanupSavedAgents();
+
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_WriteAuthoredPrompts_Checker"));
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AAssemblyLineGameMode* GM = TW.World->SpawnActor<AAssemblyLineGameMode>(
+				AAssemblyLineGameMode::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (!GM) return;
+
+			const TArray<FStationNode> Spec = {
+				FStationNode{FNodeRef{EStationType::Checker, 0}, TEXT("verify the bucket"), {}},
+			};
+			TMap<EStationType, FString> Prompts;
+			Prompts.Add(EStationType::Checker,
+				TEXT("You are the final word on whether a bucket passes."));
+
+			GM->WriteOrchestratorAuthoredPrompts(Spec, Prompts);
+
+			FString ChkContent;
+			FFileHelper::LoadFileToString(ChkContent, *SavedAgentMdPath(EStationType::Checker));
+			TestTrue(TEXT("Checker.md contains the authored Role"),
+				ChkContent.Contains(TEXT("final word")));
+			TestTrue(TEXT("Checker.md preserves DerivedRuleTemplate placeholders"),
+				ChkContent.Contains(TEXT("{{generator_rule}}")) ||
+				ChkContent.Contains(TEXT("DerivedRuleTemplate")));
+
+			CleanupSavedAgents();
 		});
 	});
 

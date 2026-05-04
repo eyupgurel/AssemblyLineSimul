@@ -10,6 +10,9 @@
 #include "StationSubclasses.h"
 #include "VoiceSubsystem.h"
 #include "WorkerRobot.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/StaticMesh.h"
@@ -28,6 +31,113 @@ AAssemblyLineGameMode::AAssemblyLineGameMode()
 {
 	// Default game mode pawn/controller is fine; demo robots are spawned separately
 	// and are not possessed by the player.
+}
+
+void AAssemblyLineGameMode::WriteOrchestratorAuthoredPrompts(
+	const TArray<FStationNode>& Nodes,
+	const TMap<EStationType, FString>& PromptsByKind)
+{
+	auto FilenameFor = [](EStationType Kind) -> const TCHAR*
+	{
+		switch (Kind)
+		{
+		case EStationType::Generator:    return TEXT("Generator.md");
+		case EStationType::Filter:       return TEXT("Filter.md");
+		case EStationType::Sorter:       return TEXT("Sorter.md");
+		case EStationType::Checker:      return TEXT("Checker.md");
+		case EStationType::Orchestrator: return TEXT("Orchestrator.md");
+		}
+		return TEXT("");
+	};
+
+	auto KindName = [](EStationType Kind) -> const TCHAR*
+	{
+		switch (Kind)
+		{
+		case EStationType::Generator:    return TEXT("Generator");
+		case EStationType::Filter:       return TEXT("Filter");
+		case EStationType::Sorter:       return TEXT("Sorter");
+		case EStationType::Checker:      return TEXT("Checker");
+		case EStationType::Orchestrator: return TEXT("Orchestrator");
+		}
+		return TEXT("Unknown");
+	};
+
+	// Look up the spec rule for a Kind. Single-instance per kind in v1
+	// (Story 32b AC32b.9) means one Rule per Kind — first match wins.
+	auto RuleForKind = [&Nodes](EStationType Kind) -> FString
+	{
+		for (const FStationNode& N : Nodes)
+		{
+			if (N.Ref.Kind == Kind) return N.Rule;
+		}
+		return FString();
+	};
+
+	const FString SavedAgentsDir = FPaths::ProjectSavedDir() / TEXT("Agents");
+	IFileManager::Get().MakeDirectory(*SavedAgentsDir, /*Tree=*/true);
+
+	for (const TPair<EStationType, FString>& Pair : PromptsByKind)
+	{
+		const EStationType Kind = Pair.Key;
+		const FString& Role = Pair.Value;
+		if (Kind == EStationType::Orchestrator)
+		{
+			// Orchestrator never rewrites itself (AC explicit out-of-scope).
+			continue;
+		}
+
+		// Pull contract sections from the static Content/Agents/<Kind>.md.
+		// We deliberately DON'T let the Orchestrator author these — a
+		// botched ProcessBucketPrompt would break JSON-result parsing.
+		const FString ProcessBucketPrompt = AgentPromptLibrary::LoadAgentSection(
+			Kind, TEXT("ProcessBucketPrompt"));
+		const FString DerivedRuleTemplate = (Kind == EStationType::Checker)
+			? AgentPromptLibrary::LoadAgentSection(Kind, TEXT("DerivedRuleTemplate"))
+			: FString();
+
+		const FString Rule = RuleForKind(Kind);
+
+		FString Body;
+		Body += FString::Printf(TEXT("# %s agent (orchestrator-authored, Story 33b)\n\n"),
+			KindName(Kind));
+		Body += TEXT("## Role\n");
+		Body += Role;
+		Body += TEXT("\n\n## DefaultRule\n");
+		Body += Rule.IsEmpty() ? TEXT("(no rule supplied)") : *Rule;
+		Body += TEXT("\n\n## ProcessBucketPrompt\n");
+		Body += ProcessBucketPrompt;
+		if (!DerivedRuleTemplate.IsEmpty())
+		{
+			Body += TEXT("\n\n## DerivedRuleTemplate\n");
+			Body += DerivedRuleTemplate;
+		}
+		Body += TEXT("\n");
+
+		const FString Path = SavedAgentsDir / FilenameFor(Kind);
+		if (FFileHelper::SaveStringToFile(Body, *Path))
+		{
+			UE_LOG(LogTemp, Display,
+				TEXT("Wrote orchestrator-authored prompt to %s"), *Path);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("Failed to write orchestrator-authored prompt to %s"), *Path);
+		}
+	}
+}
+
+void AAssemblyLineGameMode::OnMissionKeyPressed()
+{
+	UE_LOG(LogTemp, Display,
+		TEXT("OnMissionKeyPressed: M key trigger received — calling SendDefaultMission"));
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(/*Key=*/46, 3.f, FColor::Magenta,
+			TEXT("M pressed — firing mission (Claude takes 5–10 s for the long reply)"));
+	}
+	SendDefaultMission();
 }
 
 void AAssemblyLineGameMode::SendDefaultMission()
@@ -58,6 +168,11 @@ void AAssemblyLineGameMode::SendDefaultMission()
 
 	UE_LOG(LogTemp, Display,
 		TEXT("SendDefaultMission: routing mission to Orchestrator: \"%s\""), *Mission);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(/*Key=*/44, 5.f, FColor::Cyan,
+			FString::Printf(TEXT("Mission: %s"), *Mission));
+	}
 	Chat->SendMessage(EStationType::Orchestrator, Mission);
 }
 
@@ -391,7 +506,10 @@ void AAssemblyLineGameMode::SetupVoiceInput()
 	{
 		VoiceMappingContext = NewObject<UInputMappingContext>(this, TEXT("VoiceMappingContext"));
 		VoiceMappingContext->MapKey(VoiceTalkAction, EKeys::SpaceBar);
-		VoiceMappingContext->MapKey(MissionAction,   EKeys::Enter);
+		// Story 33a — was EKeys::Enter, but PIE intercepts Enter for editor
+		// shortcuts (rename actor, confirm dialog) so it never reached the
+		// game viewport. M for "Mission" is unambiguous and conflict-free.
+		VoiceMappingContext->MapKey(MissionAction,   EKeys::M);
 	}
 	if (ULocalPlayer* LP = PC->GetLocalPlayer())
 	{
@@ -408,8 +526,18 @@ void AAssemblyLineGameMode::SetupVoiceInput()
 			this, &AAssemblyLineGameMode::OnVoiceTalkStarted);
 		EIC->BindAction(VoiceTalkAction, ETriggerEvent::Completed,
 			this, &AAssemblyLineGameMode::OnVoiceTalkCompleted);
+		// Story 33a — wrapper handler so we can tell from the log whether the
+		// trigger fired (binding pipeline OK) vs SendDefaultMission's own bail-out.
 		EIC->BindAction(MissionAction, ETriggerEvent::Started,
-			this, &AAssemblyLineGameMode::SendDefaultMission);
+			this, &AAssemblyLineGameMode::OnMissionKeyPressed);
+		UE_LOG(LogTemp, Display,
+			TEXT("SetupVoiceInput: bound Space (push-to-talk) and M (mission). "
+			     "Click into the PIE viewport so the editor doesn't eat input."));
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(/*Key=*/45, 60.f, FColor::Yellow,
+				TEXT("Press M for default mission (click into viewport first)"));
+		}
 	}
 
 	// Subscribe to active-agent changes so we can light up the right station and
@@ -609,12 +737,23 @@ void AAssemblyLineGameMode::BeginPlay()
 	}
 }
 
-void AAssemblyLineGameMode::HandleDAGProposed(const TArray<FStationNode>& Nodes)
+void AAssemblyLineGameMode::HandleDAGProposed(const TArray<FStationNode>& Nodes,
+	const TMap<EStationType, FString>& PromptsByKind)
 {
 	UWorld* World = GetWorld();
 	if (!World) return;
 	UAssemblyLineDirector* Director = World->GetSubsystem<UAssemblyLineDirector>();
 	if (!Director) return;
+
+	// Story 33b — write Orchestrator-authored prompts to Saved/Agents/
+	// BEFORE spawning so the spawned stations pick them up via the
+	// Saved-beats-Content loader precedence. Cache invalidation forces a
+	// fresh disk read on the first LoadAgentSection per spawned station.
+	if (PromptsByKind.Num() > 0)
+	{
+		WriteOrchestratorAuthoredPrompts(Nodes, PromptsByKind);
+		AgentPromptLibrary::InvalidateCache();
+	}
 
 	if (!SpawnLineFromSpec(Nodes))
 	{

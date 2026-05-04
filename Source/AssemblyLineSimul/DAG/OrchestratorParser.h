@@ -26,4 +26,18 @@
 namespace OrchestratorParser
 {
 	bool ParseDAGSpec(const FString& JsonText, TArray<FStationNode>& OutNodes);
+
+	// Story 33b — accepts the FULL Claude reply object (with `dag` and
+	// optional sibling `prompts`). Extracts both. The `prompts` map is
+	// keyed by EStationType and contains the Orchestrator-authored Role
+	// prose for each spawned kind. Missing `prompts` is non-fatal —
+	// returns an empty map. Unknown station-type keys in `prompts` log
+	// a Warning and are skipped.
+	//
+	// JSON shape:
+	//   {"reply":"...","dag":{"nodes":[...]},
+	//    "prompts":{"Filter":"<role prose>", ...}}
+	bool ParsePlan(const FString& JsonText,
+		TArray<FStationNode>& OutNodes,
+		TMap<EStationType, FString>& OutPromptsByKind);
 }

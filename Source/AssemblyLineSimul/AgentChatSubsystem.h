@@ -13,7 +13,16 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnRuleUpdated, EStationType /*StationType*
 // spec that parses successfully. AAssemblyLineGameMode subscribes; the handler
 // calls SpawnLineFromSpec to materialize the line. dag: null replies (small-talk)
 // do NOT fire this delegate.
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnDAGProposed, const TArray<FStationNode>& /*Nodes*/);
+//
+// Story 33b — payload extended with PromptsByKind: the Orchestrator-authored
+// `## Role` text per spawned station kind, lifted from the reply's optional
+// sibling `prompts` object. Empty map when the field is absent or malformed
+// (non-fatal). The typedef sidesteps the comma-in-macro problem
+// (`TMap<EStationType, FString>` would be parsed as two macro args).
+using FAgentPromptsByKind = TMap<EStationType, FString>;
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnDAGProposed,
+	const TArray<FStationNode>& /*Nodes*/,
+	const FAgentPromptsByKind& /*PromptsByKind*/);
 
 UCLASS()
 class ASSEMBLYLINESIMUL_API UAgentChatSubsystem : public UGameInstanceSubsystem

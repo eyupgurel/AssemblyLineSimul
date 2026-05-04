@@ -105,6 +105,7 @@ public:
 
 	UFUNCTION() void OnVoiceTalkStarted();
 	UFUNCTION() void OnVoiceTalkCompleted();
+	UFUNCTION() void OnMissionKeyPressed();
 
 	// Story 33a — file-driven Orchestrator kickoff. Loads the
 	// `## Mission` section from `Content/Agents/Orchestrator.md` and
@@ -147,9 +148,23 @@ private:
 	FDelegateHandle ActiveAgentChangedHandle;
 	void HandleActiveAgentChanged(EStationType Agent);
 
+public:
+	// Story 33b — composes a full per-agent .md from Orchestrator-authored
+	// Role + per-node Rule + the static ProcessBucketPrompt (and Checker
+	// DerivedRuleTemplate) and writes it to Saved/Agents/<Kind>.md. Logs
+	// the absolute path at Display level. Public for tests; production
+	// code only invokes it from HandleDAGProposed.
+	void WriteOrchestratorAuthoredPrompts(const TArray<FStationNode>& Nodes,
+		const TMap<EStationType, FString>& PromptsByKind);
+
+private:
 	// Story 32b — handle for UAgentChatSubsystem::OnDAGProposed. Fired when
 	// the Orchestrator's chat reply yields a parsed DAG; the handler runs
 	// SpawnLineFromSpec → SpawnCinematicDirector → StartAllSourceCycles.
+	// Story 33b — also writes Orchestrator-authored Role prompts to
+	// Saved/Agents/<Kind>.md before the spawn so freshly-spawned stations
+	// pick up the new Roles.
 	FDelegateHandle DAGProposedHandle;
-	void HandleDAGProposed(const TArray<FStationNode>& Nodes);
+	void HandleDAGProposed(const TArray<FStationNode>& Nodes,
+		const TMap<EStationType, FString>& PromptsByKind);
 };

@@ -33,4 +33,11 @@ namespace AgentPromptLibrary
 	// Unresolved {{...}} placeholders are left intact in the output and
 	// the first one logs a warning so misses are obvious.
 	FString FormatPrompt(FString Template, const TMap<FString, FString>& Vars);
+
+	// Story 33b — clears both the per-agent and chat caches so the next
+	// LoadAgentSection / LoadChatSection re-reads from disk. Used after
+	// the spawn handler writes Orchestrator-authored prompts into
+	// Saved/Agents/, so freshly-spawned stations pick them up rather
+	// than serving the static Content/Agents/ content from cache.
+	void InvalidateCache();
 }

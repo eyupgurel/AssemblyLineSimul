@@ -27,12 +27,22 @@ namespace
 
 	FString LoadFileFromAgentsDir(const TCHAR* Filename)
 	{
-		const FString Path = FPaths::ProjectContentDir() / TEXT("Agents") / Filename;
+		// Story 33b — Saved/Agents/ wins over Content/Agents/ so the
+		// Orchestrator's per-mission writes shadow the static templates.
+		// Mirrors the LoadAPIKey precedence pattern.
+		const FString SavedPath = FPaths::ProjectSavedDir() / TEXT("Agents") / Filename;
 		FString Content;
-		if (!FFileHelper::LoadFileToString(Content, *Path))
+		if (FFileHelper::LoadFileToString(Content, *SavedPath))
+		{
+			return Content;
+		}
+
+		const FString ContentPath = FPaths::ProjectContentDir() / TEXT("Agents") / Filename;
+		if (!FFileHelper::LoadFileToString(Content, *ContentPath))
 		{
 			UE_LOG(LogAgentPrompts, Warning,
-				TEXT("AgentPromptLibrary: failed to load %s"), *Path);
+				TEXT("AgentPromptLibrary: failed to load %s (also missing in %s)"),
+				*ContentPath, *SavedPath);
 		}
 		return Content;
 	}
@@ -122,6 +132,12 @@ namespace AgentPromptLibrary
 			TEXT("AgentPromptLibrary: section '%s' not found in ChatPrompt.md"),
 			*SectionName);
 		return FString();
+	}
+
+	void InvalidateCache()
+	{
+		CachedAgents.Reset();
+		CachedChat.Reset();
 	}
 
 	FString FormatPrompt(FString Template, const TMap<FString, FString>& Vars)
