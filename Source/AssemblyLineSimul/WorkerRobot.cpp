@@ -1,5 +1,5 @@
 #include "WorkerRobot.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "Station.h"
 #include "AssemblyLineTypes.h"
 #include "Components/CapsuleComponent.h"
@@ -177,7 +177,7 @@ void AWorkerRobot::AssignStation(AStation* Station)
 	}
 }
 
-void AWorkerRobot::BeginTask(ABucket* Bucket, USceneComponent* FromSlot, USceneComponent* ToSlot, FWorkerTaskComplete OnComplete)
+void AWorkerRobot::BeginTask(APayloadCarrier* Bucket, USceneComponent* FromSlot, USceneComponent* ToSlot, FWorkerTaskComplete OnComplete)
 {
 	CurrentBucket = Bucket;
 	FromSlotPtr = FromSlot;
@@ -326,8 +326,8 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 			if (AssignedStation && CurrentBucket)
 			{
 				TWeakObjectPtr<AWorkerRobot> WeakThis(this);
-				ABucket* Bucket = CurrentBucket;
-				AssignedStation->ProcessBucket(TArray<ABucket*>{Bucket},
+				APayloadCarrier* Bucket = CurrentBucket;
+				AssignedStation->ProcessBucket(TArray<APayloadCarrier*>{Bucket},
 					FStationProcessComplete::CreateLambda([WeakThis](FStationProcessResult Result)
 					{
 						if (AWorkerRobot* Self = WeakThis.Get())
@@ -365,7 +365,7 @@ void AWorkerRobot::Tick(float DeltaSeconds)
 		if (MoveToward(TargetLocation, DeltaSeconds))
 		{
 			EnterState(EWorkerState::Idle);
-			ABucket* Bucket = CurrentBucket;
+			APayloadCarrier* Bucket = CurrentBucket;
 			CurrentBucket = nullptr;
 			TaskCompleteCb.ExecuteIfBound(Bucket);
 		}

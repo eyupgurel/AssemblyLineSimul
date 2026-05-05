@@ -3,7 +3,7 @@
 #include "AgentPromptLibrary.h"
 #include "AssemblyLineDirector.h"
 #include "AssemblyLineFeedback.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "CinematicCameraDirector.h"
 #include "MacAudioCapture.h"
 #include "OpenAIAPISubsystem.h"
@@ -56,7 +56,7 @@ void AAssemblyLineGameMode::ClearExistingLine()
 	{
 		if (IsValid(*It)) ToDestroy.Add(*It);
 	}
-	for (TActorIterator<ABucket> It(World); It; ++It)
+	for (TActorIterator<APayloadCarrier> It(World); It; ++It)
 	{
 		if (IsValid(*It)) ToDestroy.Add(*It);
 	}
@@ -280,9 +280,9 @@ bool AAssemblyLineGameMode::SpawnLineFromSpec(const TArray<FStationNode>& Nodes)
 		return false;
 	}
 
-	if (BucketClass)
+	if (CarrierClass)
 	{
-		Director->BucketClass = BucketClass;
+		Director->CarrierClass = CarrierClass;
 	}
 
 	auto SubclassFor = [](EStationType Kind) -> TSubclassOf<AStation>

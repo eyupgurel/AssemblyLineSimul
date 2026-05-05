@@ -1,7 +1,8 @@
 #include "AssemblyLineDirector.h"
 #include "Station.h"
 #include "WorkerRobot.h"
-#include "Bucket.h"
+#include "Payload.h"
+#include "PayloadCarrier.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -142,7 +143,7 @@ void UAssemblyLineDirector::StartAllSourceCycles()
 		return;
 	}
 
-	UClass* Cls = BucketClass ? BucketClass.Get() : ABucket::StaticClass();
+	UClass* Cls = CarrierClass ? CarrierClass.Get() : APayloadCarrier::StaticClass();
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
@@ -160,7 +161,7 @@ void UAssemblyLineDirector::StartAllSourceCycles()
 		const FVector SpawnLoc = SrcStation->InputSlot
 			? SrcStation->InputSlot->GetComponentLocation()
 			: SrcStation->GetActorLocation();
-		ABucket* Bucket = World->SpawnActor<ABucket>(Cls, SpawnLoc, FRotator::ZeroRotator, Params);
+		APayloadCarrier* Bucket = World->SpawnActor<APayloadCarrier>(Cls, SpawnLoc, FRotator::ZeroRotator, Params);
 		if (!Bucket)
 		{
 			UE_LOG(LogAssemblyLine, Error,
@@ -173,7 +174,7 @@ void UAssemblyLineDirector::StartAllSourceCycles()
 	}
 }
 
-void UAssemblyLineDirector::CompleteCycle(ABucket* Bucket)
+void UAssemblyLineDirector::CompleteCycle(APayloadCarrier* Bucket)
 {
 	OnCycleCompleted.Broadcast(Bucket);
 	if (!bAutoLoop) return;
@@ -210,8 +211,8 @@ void UAssemblyLineDirector::StartCycle()
 
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	UClass* Cls = BucketClass ? BucketClass.Get() : ABucket::StaticClass();
-	ABucket* Bucket = GetWorld()->SpawnActor<ABucket>(Cls, SpawnLoc, FRotator::ZeroRotator, Params);
+	UClass* Cls = CarrierClass ? CarrierClass.Get() : APayloadCarrier::StaticClass();
+	APayloadCarrier* Bucket = GetWorld()->SpawnActor<APayloadCarrier>(Cls, SpawnLoc, FRotator::ZeroRotator, Params);
 	if (!Bucket)
 	{
 		UE_LOG(LogAssemblyLine, Error, TEXT("StartCycle: failed to spawn bucket."));
@@ -222,7 +223,7 @@ void UAssemblyLineDirector::StartCycle()
 	DispatchToStation(GenRef, Bucket, /*Source=*/nullptr);
 }
 
-void UAssemblyLineDirector::DispatchToStation(const FNodeRef& Target, ABucket* Bucket, AStation* SourceStation)
+void UAssemblyLineDirector::DispatchToStation(const FNodeRef& Target, APayloadCarrier* Bucket, AStation* SourceStation)
 {
 	AStation* TargetStation = GetStation(Target);
 	AWorkerRobot* Robot = GetRobot(Target);
@@ -251,13 +252,13 @@ void UAssemblyLineDirector::DispatchToStation(const FNodeRef& Target, ABucket* B
 	// Filter/0 finishing must consult Filter/0's successors, not Filter/1's.
 	const FNodeRef CapturedRef = Target;
 	Robot->BeginTask(Bucket, FromSlot, ToSlot,
-		FWorkerTaskComplete::CreateLambda([this, CapturedRef](ABucket* DoneBucket)
+		FWorkerTaskComplete::CreateLambda([this, CapturedRef](APayloadCarrier* DoneBucket)
 		{
 			OnRobotDoneAt(CapturedRef, DoneBucket);
 		}));
 }
 
-void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
+void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, APayloadCarrier* Bucket)
 {
 	// Story 35 — backward-compat shim. Existing tests + production paths
 	// that lost track of the Instance default to 0 (which is the conventional
@@ -265,7 +266,7 @@ void UAssemblyLineDirector::OnRobotDoneAt(EStationType Type, ABucket* Bucket)
 	OnRobotDoneAt(FNodeRef{Type, 0}, Bucket);
 }
 
-void UAssemblyLineDirector::OnRobotDoneAt(const FNodeRef& Ref, ABucket* Bucket)
+void UAssemblyLineDirector::OnRobotDoneAt(const FNodeRef& Ref, APayloadCarrier* Bucket)
 {
 	if (!Bucket) return;
 
@@ -274,7 +275,7 @@ void UAssemblyLineDirector::OnRobotDoneAt(const FNodeRef& Ref, ABucket* Bucket)
 	// the bucket and start a fresh Generator cycle. Generator emptying its own
 	// output is a separate (LLM-misbehavior) concern — let it fall through to
 	// Filter, which will then recycle on its empty output.
-	if (Ref.Kind != EStationType::Generator && Bucket->Contents.Num() == 0)
+	if (Ref.Kind != EStationType::Generator && Bucket->Payload && Bucket->Payload->IsEmpty())
 	{
 		UE_LOG(LogAssemblyLine, Display,
 			TEXT("RECYCLE: bucket empty after (Kind=%d, Inst=%d) — destroying and starting fresh cycle."),
@@ -398,7 +399,7 @@ void UAssemblyLineDirector::OnRobotDoneAt(const FNodeRef& Ref, ABucket* Bucket)
 		: (SourceStation ? SourceStation->GetActorLocation() : FVector::ZeroVector);
 	for (const FNodeRef& Successor : Successors)
 	{
-		ABucket* Clone = Bucket->CloneIntoWorld(GetWorld(), CloneSpawnLocation);
+		APayloadCarrier* Clone = Bucket->CloneIntoWorld(GetWorld(), CloneSpawnLocation);
 		if (!Clone) continue;
 		if (!QueueForFanInOrDispatch(Successor, Clone, Ref))
 		{
@@ -408,7 +409,7 @@ void UAssemblyLineDirector::OnRobotDoneAt(const FNodeRef& Ref, ABucket* Bucket)
 	Bucket->Destroy();
 }
 
-bool UAssemblyLineDirector::QueueForFanInOrDispatch(const FNodeRef& Child, ABucket* Bucket, const FNodeRef& ParentRef)
+bool UAssemblyLineDirector::QueueForFanInOrDispatch(const FNodeRef& Child, APayloadCarrier* Bucket, const FNodeRef& ParentRef)
 {
 	const TArray<FNodeRef> Parents = DAG.GetParents(Child);
 	if (Parents.Num() <= 1)
@@ -441,19 +442,19 @@ bool UAssemblyLineDirector::QueueForFanInOrDispatch(const FNodeRef& Child, ABuck
 
 void UAssemblyLineDirector::FireFanInMerge(const FNodeRef& Child)
 {
-	TArray<TWeakObjectPtr<ABucket>> Weak;
-	if (TArray<TWeakObjectPtr<ABucket>>* Found = InboundBuckets.Find(Child))
+	TArray<TWeakObjectPtr<APayloadCarrier>> Weak;
+	if (TArray<TWeakObjectPtr<APayloadCarrier>>* Found = InboundBuckets.Find(Child))
 	{
 		Weak = *Found;
 	}
 	InboundBuckets.Remove(Child);
 	WaitingFor.Remove(Child);  // resets for the next cycle's arrivals
 
-	TArray<ABucket*> Inputs;
+	TArray<APayloadCarrier*> Inputs;
 	Inputs.Reserve(Weak.Num());
-	for (const TWeakObjectPtr<ABucket>& W : Weak)
+	for (const TWeakObjectPtr<APayloadCarrier>& W : Weak)
 	{
-		if (ABucket* B = W.Get()) Inputs.Add(B);
+		if (APayloadCarrier* B = W.Get()) Inputs.Add(B);
 	}
 
 	AStation* ChildStation = GetStation(Child);

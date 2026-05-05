@@ -20,7 +20,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Generator")
 	int32 MaxValue = 100;
 
-	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete) override;
+	virtual void ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete) override;
 };
 
 UCLASS()
@@ -29,7 +29,7 @@ class ASSEMBLYLINESIMUL_API AFilterStation : public AStation
 	GENERATED_BODY()
 public:
 	AFilterStation();
-	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete) override;
+	virtual void ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete) override;
 
 	// Story 25 — for each value in KeptValues (in order), finds its first
 	// matching, not-already-claimed index in InputContents. Returns the matched
@@ -46,7 +46,7 @@ class ASSEMBLYLINESIMUL_API ASorterStation : public AStation
 	GENERATED_BODY()
 public:
 	ASorterStation();
-	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete) override;
+	virtual void ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete) override;
 };
 
 UCLASS()
@@ -55,7 +55,7 @@ class ASSEMBLYLINESIMUL_API ACheckerStation : public AStation
 	GENERATED_BODY()
 public:
 	ACheckerStation();
-	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete) override;
+	virtual void ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete) override;
 
 	// Public seam for the Claude completion handler — production code routes
 	// through the lambda inside ProcessBucket; tests call this directly with

@@ -1,6 +1,6 @@
 #include "AssemblyLineFeedback.h"
 #include "AssemblyLineDirector.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/PointLight.h"
 #include "Engine/World.h"
@@ -24,17 +24,17 @@ void AAssemblyLineFeedback::BindToAssemblyLine(UAssemblyLineDirector* Director)
 	CycleRejectedHandle  = Director->OnCycleRejected .AddUObject(this, &AAssemblyLineFeedback::HandleCycleRejected);
 }
 
-void AAssemblyLineFeedback::HandleCycleCompleted(ABucket* Bucket)
+void AAssemblyLineFeedback::HandleCycleCompleted(APayloadCarrier* Bucket)
 {
 	SpawnFlash(Bucket, AcceptColor, AcceptLifetime);
 }
 
-void AAssemblyLineFeedback::HandleCycleRejected(ABucket* Bucket)
+void AAssemblyLineFeedback::HandleCycleRejected(APayloadCarrier* Bucket)
 {
 	SpawnFlash(Bucket, RejectColor, RejectLifetime);
 }
 
-void AAssemblyLineFeedback::SpawnFlash(ABucket* Bucket, const FLinearColor& Color, float Lifetime)
+void AAssemblyLineFeedback::SpawnFlash(APayloadCarrier* Bucket, const FLinearColor& Color, float Lifetime)
 {
 	if (!Bucket) return;
 	UWorld* W = GetWorld();

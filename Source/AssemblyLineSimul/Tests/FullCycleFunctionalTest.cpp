@@ -1,6 +1,6 @@
 #include "FullCycleFunctionalTest.h"
 #include "AssemblyLineDirector.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "Station.h"
 #include "StationSubclasses.h"
 #include "WorkerRobot.h"
@@ -84,7 +84,7 @@ void AFullCycleFunctionalTest::StartTest()
 	Director->StartCycle();
 }
 
-void AFullCycleFunctionalTest::HandleCycleCompleted(ABucket*)
+void AFullCycleFunctionalTest::HandleCycleCompleted(APayloadCarrier*)
 {
 	if (UWorld* World = GetWorld())
 	{

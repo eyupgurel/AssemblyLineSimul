@@ -4,7 +4,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "AssemblyLineDirector.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "Camera/CameraActor.h"
 #include "CinematicCameraDirector.h"
 #include "Engine/Engine.h"
@@ -69,9 +69,9 @@ namespace AssemblyLineCinematicTests
 	{
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		// Use ABucket as a convenient AActor stand-in (it's the production
+		// Use APayloadCarrier as a convenient AActor stand-in (it's the production
 		// subject anyway).
-		return World->SpawnActor<ABucket>(ABucket::StaticClass(), Loc, FRotator::ZeroRotator, Params);
+		return World->SpawnActor<APayloadCarrier>(APayloadCarrier::StaticClass(), Loc, FRotator::ZeroRotator, Params);
 	}
 }
 
@@ -323,7 +323,7 @@ void FCinematicCameraDirectorSpec::Define()
 			if (!D) return;
 			D->Start();
 
-			ABucket* Bucket = (ABucket*)SpawnSubjectAt(TW.World, FVector(2000.f, 0.f, 0.f));
+			APayloadCarrier* Bucket = (APayloadCarrier*)SpawnSubjectAt(TW.World, FVector(2000.f, 0.f, 0.f));
 			D->EnterChase(Bucket);
 
 			TestEqual(TEXT("mode is ChasingBucket"),
@@ -348,7 +348,7 @@ void FCinematicCameraDirectorSpec::Define()
 
 			AActor* Subject = SpawnSubjectAt(TW.World, FVector::ZeroVector);
 			D->EnterFollowingBucket(Subject, EStationType::Filter);
-			D->EnterChase((ABucket*)Subject);
+			D->EnterChase((APayloadCarrier*)Subject);
 			D->EnterFollowingBucket(Subject, EStationType::Sorter);
 
 			TestEqual(TEXT("same FollowCamera reused across mode transitions"),

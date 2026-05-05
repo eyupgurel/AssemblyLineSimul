@@ -1,7 +1,7 @@
 #include "AgentChatSubsystem.h"
 #include "AgentPromptLibrary.h"
 #include "AssemblyLineDirector.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "ClaudeAPISubsystem.h"
 #include "DAG/OrchestratorParser.h"
 #include "Station.h"
@@ -290,7 +290,7 @@ FString UAgentChatSubsystem::GetCurrentBucketContents(EStationType StationType) 
 	if (!Director) return TEXT("(unknown — no director)");
 	AWorkerRobot* Worker = Director->GetRobotForStation(StationType);
 	if (!Worker) return TEXT("(no worker assigned)");
-	ABucket* Bucket = Worker->GetCurrentBucket();
+	APayloadCarrier* Bucket = Worker->GetCurrentBucket();
 	if (!Bucket) return TEXT("(no bucket in hand)");
 	return Bucket->GetContentsString();
 }

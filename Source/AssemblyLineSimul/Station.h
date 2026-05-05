@@ -6,7 +6,7 @@
 #include "DAG/AssemblyLineDAG.h"  // FNodeRef on AStation (Story 35)
 #include "Station.generated.h"
 
-class ABucket;
+class APayloadCarrier;
 class UAgentChatSubsystem;
 class UPointLightComponent;
 class UStaticMeshComponent;
@@ -68,9 +68,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Station")
 	FString CurrentRule;
 
-	// Story 31b — accepts multiple input buckets to support fan-in (Story 31d).
-	// Today (and through 31c) Inputs.Num() is always 1; subclasses read Inputs[0].
-	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete);
+	// Story 31b — accepts multiple input carriers to support fan-in (Story 31d).
+	// Story 38 — signature changed from ABucket* to APayloadCarrier* as part of
+	// the payload abstraction. Subclasses cast `Inputs[0]->Payload` to the
+	// expected UPayload subclass at entry; on type mismatch, log and bail.
+	virtual void ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete);
 
 	// Returns the rule the station should actually use right now. Defaults to CurrentRule;
 	// Checker overrides to compose Generator/Filter/Sorter rules when in derived mode.

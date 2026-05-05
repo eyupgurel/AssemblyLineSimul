@@ -9,7 +9,8 @@
 #include "AssemblyLineFeedback.h"
 #include "AssemblyLineGameMode.h"
 #include "AssemblyLineTypes.h"
-#include "Bucket.h"
+#include "Payload.h"
+#include "PayloadCarrier.h"
 #include "CinematicCameraDirector.h"
 #include "DAG/AssemblyLineDAG.h"
 #include "Engine/GameInstance.h"
@@ -392,9 +393,9 @@ void FAssemblyLineGameModeSpec::Define()
 			TestEqual(TEXT("All workers have GameMode's mesh asset"), PropagatedCount, 4);
 		});
 
-		It("propagates BucketClass to the Director", [this]()
+		It("propagates CarrierClass to the Director", [this]()
 		{
-			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_BucketClassPropagation"));
+			FScopedTestWorld TW(TEXT("AssemblyLineGameModeSpec_CarrierClassPropagation"));
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -403,14 +404,14 @@ void FAssemblyLineGameModeSpec::Define()
 			TestNotNull(TEXT("GameMode spawned"), GM);
 			if (!GM) return;
 
-			GM->BucketClass = ATestBucketSubclass::StaticClass();
+			GM->CarrierClass = ATestBucketSubclass::StaticClass();
 			GM->SpawnLineFromSpec(LegacyFourStationSpec());
 
 			UAssemblyLineDirector* Director = TW.World->GetSubsystem<UAssemblyLineDirector>();
 			TestNotNull(TEXT("Director subsystem"), Director);
 			if (!Director) return;
-			TestEqual(TEXT("Director.BucketClass matches GameMode's"),
-				Director->BucketClass.Get(), GM->BucketClass.Get());
+			TestEqual(TEXT("Director.CarrierClass matches GameMode's"),
+				Director->CarrierClass.Get(), GM->CarrierClass.Get());
 		});
 	});
 
@@ -578,19 +579,23 @@ void FAssemblyLineGameModeSpec::Define()
 			// workers might have been carrying.
 			for (int32 i = 0; i < 3; ++i)
 			{
-				ABucket* B = TW.World->SpawnActor<ABucket>(
-					ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-				B->Contents = {i};
+				APayloadCarrier* B = TW.World->SpawnActor<APayloadCarrier>(
+					APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+				if (UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(B->Payload))
+				{
+					P->Items = {i};
+					P->OnChanged.Broadcast();
+				}
 			}
 
 			int32 BucketsBefore = 0;
-			for (TActorIterator<ABucket> It(TW.World); It; ++It) { ++BucketsBefore; }
+			for (TActorIterator<APayloadCarrier> It(TW.World); It; ++It) { ++BucketsBefore; }
 			TestEqual(TEXT("3 buckets pre-clear"), BucketsBefore, 3);
 
 			GM->ClearExistingLine();
 
 			int32 BucketsAfter = 0;
-			for (TActorIterator<ABucket> It(TW.World); It; ++It)
+			for (TActorIterator<APayloadCarrier> It(TW.World); It; ++It)
 			{
 				if (IsValid(*It)) ++BucketsAfter;
 			}
@@ -866,9 +871,13 @@ void FAssemblyLineGameModeSpec::Define()
 			GM->HandleDAGProposed(LegacyFourStationSpec(), NoPrompts);
 
 			// Simulate an in-flight bucket as if a worker was carrying it.
-			ABucket* InFlight = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			InFlight->Contents = {42};
+			APayloadCarrier* InFlight = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			if (UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(InFlight->Payload))
+			{
+				P->Items = {42};
+				P->OnChanged.Broadcast();
+			}
 			TestTrue(TEXT("in-flight bucket exists pre-re-mission"), IsValid(InFlight));
 
 			// Re-mission with the same spec.

@@ -1,6 +1,6 @@
 #include "Station.h"
 #include "AgentChatSubsystem.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -58,7 +58,7 @@ AStation::AStation()
 	ActiveLight->SetLightColor(FLinearColor(0.4f, 1.0f, 1.0f));  // cyan
 }
 
-void AStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
+void AStation::ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete)
 {
 	FStationProcessResult Result;
 	Result.bAccepted = true;

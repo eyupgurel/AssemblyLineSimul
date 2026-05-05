@@ -4,7 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "AssemblyLineFeedback.generated.h"
 
-class ABucket;
+class APayloadCarrier;
 class UAssemblyLineDirector;
 
 UCLASS()
@@ -45,7 +45,7 @@ private:
 	FDelegateHandle CycleCompletedHandle;
 	FDelegateHandle CycleRejectedHandle;
 
-	void HandleCycleCompleted(ABucket* Bucket);
-	void HandleCycleRejected(ABucket* Bucket);
-	void SpawnFlash(ABucket* Bucket, const FLinearColor& Color, float Lifetime);
+	void HandleCycleCompleted(APayloadCarrier* Bucket);
+	void HandleCycleRejected(APayloadCarrier* Bucket);
+	void SpawnFlash(APayloadCarrier* Bucket, const FLinearColor& Color, float Lifetime);
 };

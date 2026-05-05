@@ -1,12 +1,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "Station.h"
 #include "TestStations.generated.h"
 
+// Story 38 — was ATestBucketSubclass : ABucket. Kept as a subclass alias
+// for the carrier so tests that pre-Story-38 swapped it in via
+// Director->BucketClass continue to work via Director->CarrierClass.
 UCLASS(NotBlueprintable, NotPlaceable, HideDropdown)
-class ATestBucketSubclass : public ABucket
+class ATestBucketSubclass : public APayloadCarrier
 {
 	GENERATED_BODY()
 };
@@ -21,13 +24,13 @@ public:
 
 	// Story 31d — captured so specs can assert on the multi-input array
 	// passed to a fan-in merge.
-	TArray<TWeakObjectPtr<ABucket>> LastInputs;
+	TArray<TWeakObjectPtr<APayloadCarrier>> LastInputs;
 
-	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete) override
+	virtual void ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete) override
 	{
 		++ProcessCallCount;
 		LastInputs.Reset();
-		for (ABucket* B : Inputs) LastInputs.Add(B);
+		for (APayloadCarrier* C : Inputs) LastInputs.Add(C);
 		FStationProcessResult Result;
 		Result.bAccepted = true;
 		OnComplete.ExecuteIfBound(Result);
@@ -43,7 +46,7 @@ public:
 	int32 ProcessCallCount = 0;
 	FStationProcessComplete CapturedDelegate;
 
-	virtual void ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete) override
+	virtual void ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete) override
 	{
 		++ProcessCallCount;
 		CapturedDelegate = OnComplete;

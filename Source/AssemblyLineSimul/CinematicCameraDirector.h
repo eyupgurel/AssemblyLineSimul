@@ -6,7 +6,7 @@
 #include "DAG/AssemblyLineDAG.h"  // FNodeRef in event signatures (Story 36)
 #include "CinematicCameraDirector.generated.h"
 
-class ABucket;
+class APayloadCarrier;
 class ACameraActor;
 class UAssemblyLineDirector;
 class UInputAction;
@@ -124,7 +124,7 @@ public:
 	// enters Working (whereupon HandleStationActive jumps to that station's
 	// closeup, ending the chase).
 	bool IsChasingBucket() const { return Mode == ECinematicMode::ChasingBucket; }
-	ABucket* GetChaseTarget() const;
+	APayloadCarrier* GetChaseTarget() const;
 
 	// Story 36 — public introspection for tests + debugging.
 	ECinematicMode GetMode() const { return Mode; }
@@ -134,7 +134,7 @@ public:
 	// Story 36 — manual transitions used by test code to drive the
 	// state machine without relying on engine event timing.
 	void EnterFollowingBucket(AActor* Subject, EStationType Kind);
-	void EnterChase(ABucket* Bucket);
+	void EnterChase(APayloadCarrier* Bucket);
 	void EnterWideOverview();
 
 	// Public (was private) so the GameMode's Spawn flow can pre-populate
@@ -208,8 +208,8 @@ private:
 
 	void JumpToWideOverview();
 	void HandleCheckerStarted();
-	void HandleCycleResumed(ABucket* Bucket);
-	void HandleCycleRejected(ABucket* Bucket);
+	void HandleCycleResumed(APayloadCarrier* Bucket);
+	void HandleCycleRejected(APayloadCarrier* Bucket);
 	void HandleStationActive(const FNodeRef& Ref);
 	void HandleStationIdle(const FNodeRef& Ref);
 	void HandleSkipPressed();

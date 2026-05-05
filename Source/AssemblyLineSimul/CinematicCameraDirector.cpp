@@ -1,6 +1,6 @@
 #include "CinematicCameraDirector.h"
 #include "AssemblyLineDirector.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/LocalPlayer.h"
@@ -66,11 +66,11 @@ void ACinematicCameraDirector::BindToAssemblyLine(UAssemblyLineDirector* Directo
 	StationIdleHandle    = Director->OnStationIdle   .AddUObject(this, &ACinematicCameraDirector::HandleStationIdle);
 }
 
-ABucket* ACinematicCameraDirector::GetChaseTarget() const
+APayloadCarrier* ACinematicCameraDirector::GetChaseTarget() const
 {
 	if (Mode == ECinematicMode::ChasingBucket)
 	{
-		return Cast<ABucket>(FollowSubject.Get());
+		return Cast<APayloadCarrier>(FollowSubject.Get());
 	}
 	return nullptr;
 }
@@ -135,7 +135,7 @@ void ACinematicCameraDirector::EnterFollowingBucket(AActor* Subject, EStationTyp
 	}
 }
 
-void ACinematicCameraDirector::EnterChase(ABucket* Bucket)
+void ACinematicCameraDirector::EnterChase(APayloadCarrier* Bucket)
 {
 	UWorld* W = GetWorld();
 	if (!W) return;
@@ -210,13 +210,13 @@ void ACinematicCameraDirector::HandleCheckerStarted()
 	// enters Working (HandleStationActive), same as every other station.
 }
 
-void ACinematicCameraDirector::HandleCycleRejected(ABucket* Bucket)
+void ACinematicCameraDirector::HandleCycleRejected(APayloadCarrier* Bucket)
 {
 	// Story 16 AC16.1 — chase the rejected bucket back to its rework station.
 	EnterChase(Bucket);
 }
 
-void ACinematicCameraDirector::HandleCycleResumed(ABucket* Bucket)
+void ACinematicCameraDirector::HandleCycleResumed(APayloadCarrier* Bucket)
 {
 	// PASS path: chase the accepted bucket too — gives the audience a clean
 	// "victory beat" close-up before it vanishes and the next cycle begins.
@@ -236,7 +236,7 @@ void ACinematicCameraDirector::HandleStationActive(const FNodeRef& Ref)
 		return;
 	}
 
-	ABucket* Bucket = Robot->GetCurrentBucket();
+	APayloadCarrier* Bucket = Robot->GetCurrentBucket();
 	if (!Bucket)
 	{
 		// No bucket to follow yet — stay in current mode. The next

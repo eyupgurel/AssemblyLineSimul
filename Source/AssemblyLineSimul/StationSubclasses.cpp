@@ -1,7 +1,8 @@
 #include "StationSubclasses.h"
 #include "AgentPromptLibrary.h"
 #include "AssemblyLineDirector.h"
-#include "Bucket.h"
+#include "Payload.h"
+#include "PayloadCarrier.h"
 #include "ClaudeAPISubsystem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -75,9 +76,9 @@ AGeneratorStation::AGeneratorStation()
 		EStationType::Generator, TEXT("DefaultRule"));
 }
 
-void AGeneratorStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
+void AGeneratorStation::ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete)
 {
-	ABucket* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
+	APayloadCarrier* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
 	if (!Bucket)
 	{
 		FStationProcessResult R; R.bAccepted = false; R.Reason = TEXT("Null bucket");
@@ -102,12 +103,12 @@ void AGeneratorStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationPr
 		{ {TEXT("rule"), EffectiveRule} });
 
 	TWeakObjectPtr<AGeneratorStation> WeakThis(this);
-	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
+	TWeakObjectPtr<APayloadCarrier> WeakBucket(Bucket);
 	Claude->SendMessage(Prompt,
 		FClaudeComplete::CreateLambda([WeakThis, WeakBucket, OnComplete](bool bSuccess, const FString& Response)
 		{
 			AGeneratorStation* Self = WeakThis.Get();
-			ABucket* B = WeakBucket.Get();
+			APayloadCarrier* B = WeakBucket.Get();
 			if (!Self || !B)
 			{
 				FStationProcessResult R; R.bAccepted = true;
@@ -123,12 +124,22 @@ void AGeneratorStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationPr
 				return;
 			}
 
-			B->Contents = MoveTemp(Numbers);
-			B->RefreshContents();
+			UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(B->Payload);
+			if (!P)
+			{
+				UE_LOG(LogStation, Warning,
+					TEXT("[Generator] expected UIntegerArrayPayload; got %s — skipping fill"),
+					*GetNameSafe(B->Payload));
+				FStationProcessResult R; R.bAccepted = true;
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+			P->Items = MoveTemp(Numbers);
+			P->OnChanged.Broadcast();
 
-			// Hold so the cinematic (which just zoomed in on OnContentsRevealed) has time
-			// to show the freshly-filled bucket, matching the Working-state wait other
-			// stations get from WorkDuration.
+			// Hold so the cinematic (which just zoomed in on OnVisualizationRevealed)
+			// has time to show the freshly-filled carrier, matching the Working-state
+			// wait other stations get from WorkDuration.
 			UWorld* W = Self->GetWorld();
 			if (!W)
 			{
@@ -177,9 +188,9 @@ TArray<int32> AFilterStation::FindKeptIndices(
 	return Result;
 }
 
-void AFilterStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
+void AFilterStation::ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete)
 {
-	ABucket* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
+	APayloadCarrier* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
 	if (!Bucket)
 	{
 		FStationProcessResult R; R.bAccepted = false; R.Reason = TEXT("Null bucket");
@@ -206,12 +217,12 @@ void AFilterStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProce
 		{ {TEXT("rule"), EffectiveRule}, {TEXT("input"), Input} });
 
 	TWeakObjectPtr<AFilterStation> WeakThis(this);
-	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
+	TWeakObjectPtr<APayloadCarrier> WeakBucket(Bucket);
 	Claude->SendMessage(Prompt,
 		FClaudeComplete::CreateLambda([WeakThis, WeakBucket, OnComplete](bool bSuccess, const FString& Response)
 		{
 			AFilterStation* Self = WeakThis.Get();
-			ABucket* B = WeakBucket.Get();
+			APayloadCarrier* B = WeakBucket.Get();
 			if (!Self || !B)
 			{
 				FStationProcessResult R; R.bAccepted = true;
@@ -227,31 +238,45 @@ void AFilterStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProce
 				return;
 			}
 
-			// Story 25 — selection preview: keep all input balls visible,
-			// glow only the kept ones for 1 s, then drop the rejected.
-			const TArray<int32> KeptIndices = AFilterStation::FindKeptIndices(B->Contents, Numbers);
-			B->HighlightBallsAtIndices(KeptIndices);
-
-			UWorld* W = Self->GetWorld();
-			if (!W)
+			UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(B->Payload);
+			if (!P)
 			{
-				B->Contents = MoveTemp(Numbers);
-				B->RefreshContents();
+				UE_LOG(LogStation, Warning,
+					TEXT("[Filter] expected UIntegerArrayPayload; got %s — skipping filter"),
+					*GetNameSafe(B->Payload));
 				FStationProcessResult R; R.bAccepted = true;
 				OnComplete.ExecuteIfBound(R);
 				return;
 			}
 
-			TWeakObjectPtr<ABucket> WeakBucket2(B);
+			// Story 25 — selection preview: keep all input balls visible,
+			// glow only the kept ones for 1 s, then drop the rejected.
+			const TArray<int32> KeptIndices = AFilterStation::FindKeptIndices(P->Items, Numbers);
+			B->HighlightItemsAtIndices(KeptIndices);
+
+			UWorld* W = Self->GetWorld();
+			if (!W)
+			{
+				P->Items = MoveTemp(Numbers);
+				P->OnChanged.Broadcast();
+				FStationProcessResult R; R.bAccepted = true;
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+
+			TWeakObjectPtr<APayloadCarrier> WeakBucket2(B);
 			TArray<int32> KeptValues = MoveTemp(Numbers);
 			FTimerHandle Th;
 			W->GetTimerManager().SetTimer(Th,
 				FTimerDelegate::CreateLambda([WeakBucket2, KeptValues, OnComplete]()
 				{
-					if (ABucket* B2 = WeakBucket2.Get())
+					if (APayloadCarrier* B2 = WeakBucket2.Get())
 					{
-						B2->Contents = KeptValues;
-						B2->RefreshContents();
+						if (UIntegerArrayPayload* P2 = Cast<UIntegerArrayPayload>(B2->Payload))
+						{
+							P2->Items = KeptValues;
+							P2->OnChanged.Broadcast();
+						}
 					}
 					FStationProcessResult R; R.bAccepted = true;
 					OnComplete.ExecuteIfBound(R);
@@ -270,9 +295,9 @@ ASorterStation::ASorterStation()
 		EStationType::Sorter, TEXT("DefaultRule"));
 }
 
-void ASorterStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
+void ASorterStation::ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete)
 {
-	ABucket* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
+	APayloadCarrier* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
 	if (!Bucket)
 	{
 		FStationProcessResult R; R.bAccepted = false; R.Reason = TEXT("Null bucket");
@@ -299,12 +324,12 @@ void ASorterStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProce
 		{ {TEXT("rule"), EffectiveRule}, {TEXT("input"), Input} });
 
 	TWeakObjectPtr<ASorterStation> WeakThis(this);
-	TWeakObjectPtr<ABucket> WeakBucket(Bucket);
+	TWeakObjectPtr<APayloadCarrier> WeakBucket(Bucket);
 	Claude->SendMessage(Prompt,
 		FClaudeComplete::CreateLambda([WeakThis, WeakBucket, OnComplete](bool bSuccess, const FString& Response)
 		{
 			ASorterStation* Self = WeakThis.Get();
-			ABucket* B = WeakBucket.Get();
+			APayloadCarrier* B = WeakBucket.Get();
 			if (!Self || !B)
 			{
 				FStationProcessResult R; R.bAccepted = true;
@@ -320,8 +345,18 @@ void ASorterStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProce
 				return;
 			}
 
-			B->Contents = MoveTemp(Numbers);
-			B->RefreshContents();
+			UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(B->Payload);
+			if (!P)
+			{
+				UE_LOG(LogStation, Warning,
+					TEXT("[Sorter] expected UIntegerArrayPayload; got %s — skipping sort"),
+					*GetNameSafe(B->Payload));
+				FStationProcessResult R; R.bAccepted = true;
+				OnComplete.ExecuteIfBound(R);
+				return;
+			}
+			P->Items = MoveTemp(Numbers);
+			P->OnChanged.Broadcast();
 
 			FStationProcessResult R; R.bAccepted = true;
 			OnComplete.ExecuteIfBound(R);
@@ -398,9 +433,9 @@ void ACheckerStation::OnRuleSetByChat()
 	}
 }
 
-void ACheckerStation::ProcessBucket(const TArray<ABucket*>& Inputs, FStationProcessComplete OnComplete)
+void ACheckerStation::ProcessBucket(const TArray<APayloadCarrier*>& Inputs, FStationProcessComplete OnComplete)
 {
-	ABucket* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
+	APayloadCarrier* Bucket = Inputs.Num() > 0 ? Inputs[0] : nullptr;
 	if (!Bucket)
 	{
 		FStationProcessResult R; R.bAccepted = false; R.Reason = TEXT("Null bucket");

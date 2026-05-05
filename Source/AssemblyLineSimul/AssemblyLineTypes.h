@@ -44,5 +44,5 @@ struct FAgentChatMessage
 	FString Text;
 };
 
-class ABucket;
+class APayloadCarrier;
 DECLARE_DELEGATE_OneParam(FStationProcessComplete, FStationProcessResult);

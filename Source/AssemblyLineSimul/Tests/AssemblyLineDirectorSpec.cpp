@@ -4,7 +4,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "AssemblyLineDirector.h"
-#include "Bucket.h"
+#include "Payload.h"
+#include "PayloadCarrier.h"
+#include "TestPayloads.h"
 #include "DAG/AssemblyLineDAG.h"
 #include "DAG/DAGBuilder.h"
 #include "Station.h"
@@ -40,6 +42,35 @@ namespace AssemblyLineDirectorTests
 			}
 		}
 	};
+
+	// Story 38 helpers — pre-Story-38 tests did `B->Contents = {...};` directly
+	// on ABucket. With APayloadCarrier these read/write through the typed payload.
+	inline void SetCarrierItems(APayloadCarrier* C, const TArray<int32>& Items)
+	{
+		if (UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(C ? C->Payload : nullptr))
+		{
+			P->Items = Items;
+			P->OnChanged.Broadcast();
+		}
+	}
+
+	inline TArray<int32> GetCarrierItems(const APayloadCarrier* C)
+	{
+		if (const UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(C ? C->Payload : nullptr))
+		{
+			return P->Items;
+		}
+		return {};
+	}
+
+	inline int32 GetCarrierItemCount(const APayloadCarrier* C)
+	{
+		if (const UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(C ? C->Payload : nullptr))
+		{
+			return P->Items.Num();
+		}
+		return 0;
+	}
 }
 
 DEFINE_SPEC(FAssemblyLineDirectorSpec,
@@ -105,14 +136,14 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			APayloadCarrier* Bucket = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
 			TestNotNull(TEXT("bucket spawned"), Bucket);
-			TestEqual(TEXT("bucket starts empty"), Bucket->Contents.Num(), 0);
+			TestEqual(TEXT("bucket starts empty"), GetCarrierItemCount(Bucket), 0);
 
 			bool bRecycled = false;
-			ABucket* RecycledArg = nullptr;
-			Director->OnCycleRecycled.AddLambda([&](ABucket* B)
+			APayloadCarrier* RecycledArg = nullptr;
+			Director->OnCycleRecycled.AddLambda([&](APayloadCarrier* B)
 			{
 				bRecycled = true;
 				RecycledArg = B;
@@ -133,12 +164,12 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			Bucket->Contents = { 7, 11, 13 };
+			APayloadCarrier* Bucket = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(Bucket, { 7, 11, 13 });
 
 			bool bRecycled = false;
-			Director->OnCycleRecycled.AddLambda([&](ABucket*) { bRecycled = true; });
+			Director->OnCycleRecycled.AddLambda([&](APayloadCarrier*) { bRecycled = true; });
 
 			Director->OnRobotDoneAt(EStationType::Filter, Bucket);
 
@@ -151,15 +182,15 @@ void FAssemblyLineDirectorSpec::Define()
 		// Helper: count buckets currently in the world that look like dispatched
 		// fan-out clones — non-source, non-pending-kill, with Contents matching
 		// the supplied set.
-		auto CountClonesWithContents = [](UWorld* World, const ABucket* Source,
+		auto CountClonesWithContents = [](UWorld* World, const APayloadCarrier* Source,
 			const TArray<int32>& ExpectedContents) -> int32
 		{
 			int32 N = 0;
-			for (TActorIterator<ABucket> It(World); It; ++It)
+			for (TActorIterator<APayloadCarrier> It(World); It; ++It)
 			{
-				ABucket* B = *It;
+				APayloadCarrier* B = *It;
 				if (!IsValid(B) || B == Source) continue;
-				if (B->Contents == ExpectedContents) ++N;
+				if (GetCarrierItems(B) == ExpectedContents) ++N;
 			}
 			return N;
 		};
@@ -185,11 +216,11 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* Source = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			APayloadCarrier* Source = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
 			TestNotNull(TEXT("source bucket spawned"), Source);
 			if (!Source) return;
-			Source->Contents = { 1, 2, 3 };
+			SetCarrierItems(Source, { 1, 2, 3 });
 
 			Director->OnRobotDoneAt(EStationType::Generator, Source);
 
@@ -219,10 +250,10 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* Source = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			APayloadCarrier* Source = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
 			if (!Source) return;
-			Source->Contents = { 5, 6, 7, 8 };
+			SetCarrierItems(Source, { 5, 6, 7, 8 });
 
 			Director->OnRobotDoneAt(EStationType::Generator, Source);
 
@@ -248,10 +279,10 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* Source = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			APayloadCarrier* Source = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
 			if (!Source) return;
-			Source->Contents = { 9, 10 };
+			SetCarrierItems(Source, { 9, 10 });
 
 			Director->OnRobotDoneAt(EStationType::Generator, Source);
 
@@ -369,9 +400,9 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* B1 = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			B1->Contents = {1};
+			APayloadCarrier* B1 = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(B1, {1});
 			Director->OnRobotDoneAt(EStationType::Generator, B1);
 
 			TestEqual(TEXT("merge not yet fired (still waiting for Filter)"),
@@ -385,9 +416,9 @@ void FAssemblyLineDirectorSpec::Define()
 				.Source(Gen).Source(Flt).Edge(Gen, Srt).Edge(Flt, Srt).Build());
 			SpawnTestStation(TW.World, Director, EStationType::Sorter);
 
-			ABucket* B2 = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			B2->Contents = {2};
+			APayloadCarrier* B2 = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(B2, {2});
 			Director->OnRobotDoneAt(EStationType::Filter, B2);
 
 			// If WaitingFor wasn't cleared, this single arrival would fire
@@ -410,9 +441,9 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* EmptyBucket = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			TestEqual(TEXT("bucket starts empty"), EmptyBucket->Contents.Num(), 0);
+			APayloadCarrier* EmptyBucket = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			TestEqual(TEXT("bucket starts empty"), GetCarrierItemCount(EmptyBucket), 0);
 
 			// Trigger the recycle timer (non-Generator + empty bucket path).
 			Director->OnRobotDoneAt(EStationType::Filter, EmptyBucket);
@@ -491,13 +522,13 @@ void FAssemblyLineDirectorSpec::Define()
 			SpawnTestStationOfKind(TW.World, Director, EStationType::Filter);
 
 			bool bCompleted = false;
-			Director->OnCycleCompleted.AddLambda([&](ABucket*) { bCompleted = true; });
+			Director->OnCycleCompleted.AddLambda([&](APayloadCarrier*) { bCompleted = true; });
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* B = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			B->Contents = {82, 76};
+			APayloadCarrier* B = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(B, {82, 76});
 
 			Director->OnRobotDoneAt(Flt, B);
 
@@ -520,12 +551,12 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* B = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			B->Contents = {1};
+			APayloadCarrier* B = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(B, {1});
 
 			bool bCompleted = false;
-			Director->OnCycleCompleted.AddLambda([&](ABucket*) { bCompleted = true; });
+			Director->OnCycleCompleted.AddLambda([&](APayloadCarrier*) { bCompleted = true; });
 
 			// Unregistered Ref → not a terminal, just garbage. Warning.
 			Director->OnRobotDoneAt(FNodeRef{EStationType::Filter, 0}, B);
@@ -646,12 +677,12 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* B0 = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			B0->Contents = {1};
-			ABucket* B1 = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			B1->Contents = {2};
+			APayloadCarrier* B0 = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(B0, {1});
+			APayloadCarrier* B1 = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(B1, {2});
 
 			// Filter/0 finishes — should dispatch to Sorter (Kind=2 in EStationType).
 			Director->OnRobotDoneAt(F0, B0);
@@ -737,13 +768,13 @@ void FAssemblyLineDirectorSpec::Define()
 			SpawnCheckerWithBot(TW.World, Director, /*bAccepted=*/true, EStationType::Filter);
 
 			bool bCompleted = false;
-			Director->OnCycleCompleted.AddLambda([&](ABucket*) { bCompleted = true; });
+			Director->OnCycleCompleted.AddLambda([&](APayloadCarrier*) { bCompleted = true; });
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* B = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			B->Contents = {7};
+			APayloadCarrier* B = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(B, {7});
 
 			Director->OnRobotDoneAt(Chk, B);
 
@@ -772,14 +803,14 @@ void FAssemblyLineDirectorSpec::Define()
 
 			bool bCompleted = false;
 			bool bRejected = false;
-			Director->OnCycleCompleted.AddLambda([&](ABucket*) { bCompleted = true; });
-			Director->OnCycleRejected.AddLambda([&](ABucket*)  { bRejected = true; });
+			Director->OnCycleCompleted.AddLambda([&](APayloadCarrier*) { bCompleted = true; });
+			Director->OnCycleRejected.AddLambda([&](APayloadCarrier*)  { bRejected = true; });
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* B = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			B->Contents = {7};
+			APayloadCarrier* B = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(B, {7});
 
 			Director->OnRobotDoneAt(Chk, B);
 
@@ -811,13 +842,13 @@ void FAssemblyLineDirectorSpec::Define()
 			SpawnCheckerWithBot(TW.World, Director, /*bAccepted=*/false, EStationType::Filter);
 
 			bool bRejected = false;
-			Director->OnCycleRejected.AddLambda([&](ABucket*) { bRejected = true; });
+			Director->OnCycleRejected.AddLambda([&](APayloadCarrier*) { bRejected = true; });
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* B = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			B->Contents = {7};
+			APayloadCarrier* B = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(B, {7});
 
 			Director->OnRobotDoneAt(Chk, B);
 
@@ -848,7 +879,7 @@ void FAssemblyLineDirectorSpec::Define()
 		auto CountBuckets = [](UWorld* World) -> int32
 		{
 			int32 N = 0;
-			for (TActorIterator<ABucket> It(World); It; ++It)
+			for (TActorIterator<APayloadCarrier> It(World); It; ++It)
 			{
 				if (IsValid(*It)) ++N;
 			}
@@ -950,12 +981,12 @@ void FAssemblyLineDirectorSpec::Define()
 
 			FActorSpawnParameters Params;
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			ABucket* BucketA = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			ABucket* BucketB = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			BucketA->Contents = { 1, 2, 3 };
-			BucketB->Contents = { 4, 5, 6 };
+			APayloadCarrier* BucketA = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			APayloadCarrier* BucketB = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(BucketA, { 1, 2, 3 });
+			SetCarrierItems(BucketB, { 4, 5, 6 });
 
 			Director->OnRobotDoneAt(EStationType::Generator, BucketA);
 			TestEqual(TEXT("after first arrival, no merge yet"), StationC->ProcessCallCount, 0);
@@ -1001,17 +1032,17 @@ void FAssemblyLineDirectorSpec::Define()
 			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 			// Cycle 1.
-			ABucket* C1A = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			ABucket* C1B = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			C1A->Contents = {10}; C1B->Contents = {20};
+			APayloadCarrier* C1A = TW.World->SpawnActor<APayloadCarrier>(APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			APayloadCarrier* C1B = TW.World->SpawnActor<APayloadCarrier>(APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(C1A, {10}); SetCarrierItems(C1B, {20});
 			Director->OnRobotDoneAt(EStationType::Generator, C1A);
 			Director->OnRobotDoneAt(EStationType::Filter,    C1B);
 			TestEqual(TEXT("merge fired once after cycle 1"), StationC->ProcessCallCount, 1);
 
 			// Cycle 2 — wait state must have reset for this to fire correctly.
-			ABucket* C2A = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			ABucket* C2B = TW.World->SpawnActor<ABucket>(ABucket::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-			C2A->Contents = {30}; C2B->Contents = {40};
+			APayloadCarrier* C2A = TW.World->SpawnActor<APayloadCarrier>(APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			APayloadCarrier* C2B = TW.World->SpawnActor<APayloadCarrier>(APayloadCarrier::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+			SetCarrierItems(C2A, {30}); SetCarrierItems(C2B, {40});
 			Director->OnRobotDoneAt(EStationType::Generator, C2A);
 			TestEqual(TEXT("after cycle-2 first arrival, no second merge yet"),
 				StationC->ProcessCallCount, 1);

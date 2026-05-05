@@ -1,4 +1,5 @@
-#include "Bucket.h"
+#include "PayloadVisualizer.h"
+#include "Payload.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/CanvasRenderTarget2D.h"
@@ -15,7 +16,7 @@ namespace
 	constexpr float CrateHalfX = 90.f;
 	constexpr float CrateHalfY = 70.f;
 	constexpr float CrateHalfZ = 30.f;
-	constexpr float EdgeThicknessScale = 0.10f;  // chunky enough to read from the high overhead
+	constexpr float EdgeThicknessScale = 0.10f;
 
 	constexpr int32 BallGridCols = 4;
 	constexpr float BallSpacing  = 45.f;
@@ -26,14 +27,14 @@ namespace
 	// Dark-only palette so white digits stay legible. No yellow / orange / pastels —
 	// every entry's luminance stays well below 0.5.
 	static const FLinearColor BallPalette[] = {
-		FLinearColor(0.05f, 0.05f, 0.05f, 1.f),  // 0 -> near-black
-		FLinearColor(0.05f, 0.15f, 0.45f, 1.f),  // 1 -> deep blue
-		FLinearColor(0.45f, 0.05f, 0.05f, 1.f),  // 2 -> dark red
-		FLinearColor(0.30f, 0.05f, 0.40f, 1.f),  // 3 -> dark purple
-		FLinearColor(0.05f, 0.30f, 0.10f, 1.f),  // 4 -> forest green
-		FLinearColor(0.40f, 0.05f, 0.20f, 1.f),  // 5 -> wine
-		FLinearColor(0.10f, 0.25f, 0.35f, 1.f),  // 6 -> teal-slate
-		FLinearColor(0.30f, 0.15f, 0.05f, 1.f),  // 7 -> dark brown
+		FLinearColor(0.05f, 0.05f, 0.05f, 1.f),
+		FLinearColor(0.05f, 0.15f, 0.45f, 1.f),
+		FLinearColor(0.45f, 0.05f, 0.05f, 1.f),
+		FLinearColor(0.30f, 0.05f, 0.40f, 1.f),
+		FLinearColor(0.05f, 0.30f, 0.10f, 1.f),
+		FLinearColor(0.40f, 0.05f, 0.20f, 1.f),
+		FLinearColor(0.10f, 0.25f, 0.35f, 1.f),
+		FLinearColor(0.30f, 0.15f, 0.05f, 1.f),
 	};
 
 	FLinearColor PickBallColor(int32 Number)
@@ -44,60 +45,82 @@ namespace
 	}
 }
 
-ABucket::ABucket()
+// --- UPayloadVisualizer ----------------------------------------------------
+
+void UPayloadVisualizer::BindPayload(UPayload* InPayload)
 {
-	PrimaryActorTick.bCanEverTick = false;
-
-	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
-	RootComponent = MeshComponent;
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
-		TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (CubeFinder.Succeeded())
+	if (BoundPayload == InPayload) return;
+	BoundPayload = InPayload;
+	if (BoundPayload)
 	{
-		MeshComponent->SetStaticMesh(CubeFinder.Object);
+		BoundPayload->OnChanged.AddUObject(this, &UPayloadVisualizer::OnBoundPayloadChanged);
+		Rebuild();  // initial render
 	}
-	// Engine cube is 100cm; scale to the crate's inner extents (× 2 because half-extents).
-	MeshComponent->SetRelativeScale3D(FVector(
-		CrateHalfX * 2.f / 100.f,
-		CrateHalfY * 2.f / 100.f,
-		CrateHalfZ * 2.f / 100.f));
-	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	// Hidden by default — OnConstruction shows the cube with EmissiveMeshMaterial
-	// to render the bucket as a solid glowing-gold block.
-	MeshComponent->SetVisibility(false);
+}
 
-	// Hide the entire actor at spawn — RefreshContents un-hides it when Contents is non-empty.
-	SetActorHiddenInGame(true);
+void UPayloadVisualizer::OnBoundPayloadChanged()
+{
+	Rebuild();
+}
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(
-		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-	UStaticMesh* CylinderMesh = CylinderFinder.Succeeded() ? CylinderFinder.Object : nullptr;
+// --- UBilliardBallVisualizer -----------------------------------------------
+
+UBilliardBallVisualizer::UBilliardBallVisualizer()
+{
+	// SceneComponents don't tick by default; we don't need it.
+	PrimaryComponentTick.bCanEverTick = false;
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereFinder(
 		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	CachedSphereMesh = SphereFinder.Succeeded() ? SphereFinder.Object : nullptr;
 
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(
+		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	CachedCylinderMesh = CylinderFinder.Succeeded() ? CylinderFinder.Object : nullptr;
+
 	static ConstructorHelpers::FObjectFinder<UFont> FontFinder(
 		TEXT("/Engine/EngineFonts/Roboto.Roboto"));
 	CachedNumberFont = FontFinder.Succeeded() ? FontFinder.Object : nullptr;
 
-	// 12 crate edges: 4 vertical posts + 4 top + 4 bottom horizontals.
-	// Cylinders are 100 cm tall along Z by default; we scale + rotate per edge.
+	// Default to the project's M_BilliardBall master material so the visualizer
+	// renders numbered/colored balls without requiring a Blueprint subclass to
+	// wire BilliardBallMaterial. Pre-Story-38 BP_BilliardBucket set this; with
+	// BP_BilliardBucket gone, the C++ default is what guarantees byte-identical
+	// visuals for the typical mission. Designers can still override via a BP.
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BallMatFinder(
+		TEXT("/Game/M_BilliardBall.M_BilliardBall"));
+	if (BallMatFinder.Succeeded())
+	{
+		BilliardBallMaterial = BallMatFinder.Object;
+	}
+}
+
+void UBilliardBallVisualizer::OnRegister()
+{
+	Super::OnRegister();
+	EnsureCrateBuilt();
+}
+
+void UBilliardBallVisualizer::EnsureCrateBuilt()
+{
+	if (bCrateBuilt) return;
+
+	UStaticMesh* CylinderMesh = CachedCylinderMesh;
+
+	UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
+
 	struct FEdgeSpec { FVector Loc; FRotator Rot; FVector Scale; };
 	const float T = EdgeThicknessScale;
 	const FEdgeSpec Specs[12] = {
-		// Verticals (4)
 		{ FVector( CrateHalfX,  CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(T, T, CrateHalfZ * 2.f / 100.f) },
 		{ FVector( CrateHalfX, -CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(T, T, CrateHalfZ * 2.f / 100.f) },
 		{ FVector(-CrateHalfX,  CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(T, T, CrateHalfZ * 2.f / 100.f) },
 		{ FVector(-CrateHalfX, -CrateHalfY, 0.f), FRotator::ZeroRotator, FVector(T, T, CrateHalfZ * 2.f / 100.f) },
-		// Top horizontals (4)
 		{ FVector(0.f,  CrateHalfY,  CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(T, T, CrateHalfX * 2.f / 100.f) },
 		{ FVector(0.f, -CrateHalfY,  CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(T, T, CrateHalfX * 2.f / 100.f) },
 		{ FVector( CrateHalfX, 0.f,  CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(T, T, CrateHalfY * 2.f / 100.f) },
 		{ FVector(-CrateHalfX, 0.f,  CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(T, T, CrateHalfY * 2.f / 100.f) },
-		// Bottom horizontals (4)
 		{ FVector(0.f,  CrateHalfY, -CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(T, T, CrateHalfX * 2.f / 100.f) },
 		{ FVector(0.f, -CrateHalfY, -CrateHalfZ), FRotator(90.f, 0.f, 0.f), FVector(T, T, CrateHalfX * 2.f / 100.f) },
 		{ FVector( CrateHalfX, 0.f, -CrateHalfZ), FRotator(90.f, 90.f, 0.f), FVector(T, T, CrateHalfY * 2.f / 100.f) },
@@ -107,39 +130,14 @@ ABucket::ABucket()
 	for (int32 i = 0; i < 12; ++i)
 	{
 		const FName EdgeName = *FString::Printf(TEXT("CrateEdge_%d"), i);
-		UStaticMeshComponent* Edge = CreateDefaultSubobject<UStaticMeshComponent>(EdgeName);
-		Edge->SetupAttachment(RootComponent);
+		UStaticMeshComponent* Edge = NewObject<UStaticMeshComponent>(this, EdgeName);
+		Edge->SetupAttachment(this);
 		Edge->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Edge->SetRelativeLocation(Specs[i].Loc);
 		Edge->SetRelativeRotation(Specs[i].Rot);
 		Edge->SetRelativeScale3D(Specs[i].Scale);
 		if (CylinderMesh) Edge->SetStaticMesh(CylinderMesh);
-		CrateEdges.Add(Edge);
-	}
-}
-
-void ABucket::OnConstruction(const FTransform& Transform)
-{
-	Super::OnConstruction(Transform);
-
-	// Force the cube to crate dims here (not just in the constructor) so an existing
-	// Blueprint subclass with a serialised scale can't shrink the glass walls.
-	MeshComponent->SetRelativeScale3D(FVector(
-		CrateHalfX * 2.f / 100.f,
-		CrateHalfY * 2.f / 100.f,
-		CrateHalfZ * 2.f / 100.f));
-
-	// Demo direction: glowing-gold wireframe bucket — no inner cube, only the
-	// 12 crate edges glow. EmissiveMeshMaterial's Color parameter drives the
-	// emissive output directly so RGB > 1 in GlassTint triggers HDR bloom.
-	MeshComponent->SetVisibility(false);
-
-	UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
-		nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
-	for (UStaticMeshComponent* Edge : CrateEdges)
-	{
-		if (!Edge) continue;
-		Edge->SetVisibility(true);
+		Edge->RegisterComponent();
 		if (Emissive)
 		{
 			if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Emissive, this))
@@ -148,33 +146,31 @@ void ABucket::OnConstruction(const FTransform& Transform)
 				Edge->SetMaterial(0, MID);
 			}
 		}
+		CrateEdges.Add(Edge);
 	}
+
+	// Hide owning actor at start — Rebuild un-hides when items appear.
+	if (AActor* Owner = GetOwner())
+	{
+		Owner->SetActorHiddenInGame(true);
+	}
+
+	bCrateBuilt = true;
 }
 
-
-FString ABucket::GetContentsString() const
+void UBilliardBallVisualizer::Rebuild()
 {
-	if (Contents.Num() == 0)
+	UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(BoundPayload);
+	if (!P)
 	{
-		return TEXT("[]");
+		// Wrong payload type for this visualizer — leave the crate empty
+		// and hidden. Stations should never bind a non-integer payload to
+		// this visualizer; if they do, the contract violation is on them.
+		return;
 	}
 
-	FString Out = TEXT("[");
-	for (int32 i = 0; i < Contents.Num(); ++i)
-	{
-		Out += FString::FromInt(Contents[i]);
-		if (i < Contents.Num() - 1)
-		{
-			Out += TEXT(", ");
-		}
-	}
-	Out += TEXT("]");
-	return Out;
-}
-
-void ABucket::RefreshContents()
-{
-	const bool bWasHidden = IsHidden();
+	AActor* Owner = GetOwner();
+	const bool bWasHidden = Owner ? Owner->IsHidden() : true;
 
 	for (UStaticMeshComponent* Ball : NumberBalls)
 	{
@@ -182,15 +178,17 @@ void ABucket::RefreshContents()
 	}
 	NumberBalls.Reset();
 
-	const int32 N = Contents.Num();
-	// Hide the bucket entirely when empty so the audience never sees an unfilled crate.
-	SetActorHiddenInGame(N == 0);
+	const int32 N = P->Items.Num();
+	if (Owner)
+	{
+		Owner->SetActorHiddenInGame(N == 0);
+	}
 
-	// Notify observers when the crate transitions from empty/hidden to filled/visible.
 	if (bWasHidden && N > 0)
 	{
-		OnContentsRevealed.Broadcast();
+		OnVisualizationRevealed.Broadcast();
 	}
+
 	const int32 Rows = FMath::DivideAndRoundUp(N, BallGridCols);
 	const float OffsetX = -0.5f * (BallGridCols - 1) * BallSpacing;
 	const float OffsetY = -0.5f * (Rows - 1) * BallSpacing;
@@ -203,7 +201,7 @@ void ABucket::RefreshContents()
 
 		const FName BallName = *FString::Printf(TEXT("NumberBall_%d"), i);
 		UStaticMeshComponent* Ball = NewObject<UStaticMeshComponent>(this, BallName);
-		Ball->SetupAttachment(RootComponent);
+		Ball->SetupAttachment(this);
 		Ball->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Ball->SetRelativeLocation(LocalLoc);
 		Ball->SetRelativeRotation(BallRelativeRotation);
@@ -212,8 +210,6 @@ void ABucket::RefreshContents()
 		Ball->RegisterComponent();
 		NumberBalls.Add(Ball);
 
-		// Billiard finish — render the number into a runtime texture and apply it via a MID
-		// from the configured master material (expects "NumberTexture" + "BaseColor" parameters).
 		if (UMaterialInterface* Master = BilliardBallMaterial.LoadSynchronous())
 		{
 			UCanvasRenderTarget2D* RT = UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(
@@ -221,7 +217,6 @@ void ABucket::RefreshContents()
 				BillboardTextureSize, BillboardTextureSize);
 			if (RT && CachedNumberFont)
 			{
-				// Clear to transparent so only the rendered text contributes alpha.
 				UKismetRenderingLibrary::ClearRenderTarget2D(this, RT, FLinearColor(0.f, 0.f, 0.f, 0.f));
 				UCanvas* Canvas = nullptr;
 				FVector2D Size;
@@ -229,15 +224,11 @@ void ABucket::RefreshContents()
 				UKismetRenderingLibrary::BeginDrawCanvasToRenderTarget(this, RT, Canvas, Size, Ctx);
 				if (Canvas)
 				{
-					const FString Text = FString::FromInt(Contents[i]);
+					const FString Text = FString::FromInt(P->Items[i]);
 					const float CenterX = BillboardTextureSize * 0.5f;
 					const float CenterY = BillboardTextureSize * 0.5f;
-					const float EdgeOffset = BillboardTextureSize * 0.30f;
 
-					// Pick a text color that contrasts with the ball's base color: light text on
-					// dark balls, dark text on light ones. NO outline — the outlined halo was
-					// dominating on bright balls and washing the digit out.
-					const FLinearColor BallColor = PickBallColor(Contents[i]);
+					const FLinearColor BallColor = PickBallColor(P->Items[i]);
 					const float Luminance = 0.299f * BallColor.R + 0.587f * BallColor.G + 0.114f * BallColor.B;
 					const bool bLightBall = Luminance > 0.5f;
 					const FLinearColor TextColor = bLightBall ? FLinearColor::Black : FLinearColor::White;
@@ -254,15 +245,14 @@ void ABucket::RefreshContents()
 			if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Master, this))
 			{
 				if (RT) MID->SetTextureParameterValue(TEXT("NumberTexture"), RT);
-				MID->SetVectorParameterValue(TEXT("BaseColor"), PickBallColor(Contents[i]));
+				MID->SetVectorParameterValue(TEXT("BaseColor"), PickBallColor(P->Items[i]));
 				Ball->SetMaterial(0, MID);
 			}
 		}
-
 	}
 }
 
-void ABucket::HighlightBallsAtIndices(const TArray<int32>& Indices)
+void UBilliardBallVisualizer::HighlightItemsAtIndices(const TArray<int32>& Indices)
 {
 	if (Indices.Num() == 0) return;
 	UMaterialInterface* Emissive = LoadObject<UMaterialInterface>(
@@ -281,16 +271,9 @@ void ABucket::HighlightBallsAtIndices(const TArray<int32>& Indices)
 	}
 }
 
-ABucket* ABucket::CloneIntoWorld(UWorld* World, const FVector& Location) const
+void UBilliardBallVisualizer::ClearHighlight()
 {
-	if (!World) return nullptr;
-	FActorSpawnParameters Params;
-	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ABucket* Clone = World->SpawnActor<ABucket>(GetClass(), Location, FRotator::ZeroRotator, Params);
-	if (!Clone) return nullptr;
-	Clone->BilliardBallMaterial = BilliardBallMaterial;
-	Clone->Contents = Contents;
-	Clone->RefreshContents();
-	return Clone;
+	// Trigger a full Rebuild so every ball gets its normal billiard
+	// material back. Cheap given typical bucket sizes.
+	Rebuild();
 }
-

@@ -4,7 +4,7 @@
 #include "FunctionalTest.h"
 #include "FullCycleFunctionalTest.generated.h"
 
-class ABucket;
+class APayloadCarrier;
 class AStation;
 class AWorkerRobot;
 
@@ -31,5 +31,5 @@ private:
 
 	FDelegateHandle CycleCompletedHandle;
 
-	void HandleCycleCompleted(ABucket* Bucket);
+	void HandleCycleCompleted(APayloadCarrier* Bucket);
 };

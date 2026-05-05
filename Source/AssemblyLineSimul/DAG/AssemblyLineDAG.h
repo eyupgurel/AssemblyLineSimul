@@ -11,7 +11,7 @@
 // Story 35 — promoted to USTRUCT so UPROPERTY TMap<FNodeRef, ...> on
 // UAssemblyLineDirector reflects through UHT. The original "pure-domain"
 // claim in the architecture doc is partially aspirational; we already
-// pull in CoreMinimal types (TArray, TMap, TWeakObjectPtr<ABucket>) so
+// pull in CoreMinimal types (TArray, TMap, TWeakObjectPtr<APayloadCarrier>) so
 // USTRUCT is just another flavor of that.
 USTRUCT()
 struct ASSEMBLYLINESIMUL_API FNodeRef
@@ -58,7 +58,7 @@ struct FStationNode
 struct FStationNodeState
 {
 	bool                              bProcessed = false;
-	TArray<TWeakObjectPtr<class ABucket>> InboundBuckets;
+	TArray<TWeakObjectPtr<class APayloadCarrier>> InboundBuckets;
 	int32                             GcWatermark = 0;
 };
 

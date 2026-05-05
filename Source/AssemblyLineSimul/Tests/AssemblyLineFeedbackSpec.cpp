@@ -6,7 +6,7 @@
 #include "AssemblyLineDirector.h"
 #include "AssemblyLineFeedback.h"
 #include "AssemblyLineGameMode.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/PointLight.h"
@@ -73,8 +73,8 @@ void FAssemblyLineFeedbackSpec::Define()
 				AAssemblyLineFeedback::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
 			Feedback->BindToAssemblyLine(AsmDirector);
 
-			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector(500.f, 0.f, 100.f), FRotator::ZeroRotator, Params);
+			APayloadCarrier* Bucket = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector(500.f, 0.f, 100.f), FRotator::ZeroRotator, Params);
 			TestNotNull(TEXT("test bucket"), Bucket);
 			if (!Bucket) return;
 
@@ -110,8 +110,8 @@ void FAssemblyLineFeedbackSpec::Define()
 				AAssemblyLineFeedback::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
 			Feedback->BindToAssemblyLine(AsmDirector);
 
-			ABucket* Bucket = TW.World->SpawnActor<ABucket>(
-				ABucket::StaticClass(), FVector(800.f, 200.f, 100.f), FRotator::ZeroRotator, Params);
+			APayloadCarrier* Bucket = TW.World->SpawnActor<APayloadCarrier>(
+				APayloadCarrier::StaticClass(), FVector(800.f, 200.f, 100.f), FRotator::ZeroRotator, Params);
 			TestNotNull(TEXT("test bucket"), Bucket);
 			if (!Bucket) return;
 

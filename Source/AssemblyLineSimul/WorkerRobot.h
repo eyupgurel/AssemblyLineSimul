@@ -6,7 +6,7 @@
 #include "DAG/AssemblyLineDAG.h"  // FNodeRef on phase events (Story 36)
 #include "WorkerRobot.generated.h"
 
-class ABucket;
+class APayloadCarrier;
 class AStation;
 class UCapsuleComponent;
 class UPointLightComponent;
@@ -28,7 +28,7 @@ enum class EWorkerState : uint8
 	ReturnHome
 };
 
-DECLARE_DELEGATE_OneParam(FWorkerTaskComplete, ABucket* /*Bucket*/);
+DECLARE_DELEGATE_OneParam(FWorkerTaskComplete, APayloadCarrier* /*Bucket*/);
 // Story 36 — phase events carry the assigned station's full FNodeRef so
 // downstream listeners (cinematic camera, multi-instance HUD, etc.) can
 // distinguish Filter/0 from Filter/1. Pre-Story 36 these were
@@ -122,7 +122,7 @@ public:
 	void AssignStation(AStation* Station);
 
 	// Public accessor for the bucket the worker is currently carrying / processing.
-	ABucket* GetCurrentBucket() const { return CurrentBucket; }
+	APayloadCarrier* GetCurrentBucket() const { return CurrentBucket; }
 
 	// Assigns ResolvedMesh to SkeletalBodyMesh and hides placeholders. Null is a no-op.
 	void ApplyBodyMesh(USkeletalMesh* ResolvedMesh);
@@ -135,7 +135,7 @@ public:
 
 	// Order this robot to fetch a bucket from FromSlot, run their station's work,
 	// place the result at ToSlot, then return home.
-	void BeginTask(ABucket* Bucket, USceneComponent* FromSlot, USceneComponent* ToSlot, FWorkerTaskComplete OnComplete);
+	void BeginTask(APayloadCarrier* Bucket, USceneComponent* FromSlot, USceneComponent* ToSlot, FWorkerTaskComplete OnComplete);
 
 	// Idle pose played in stationary states (Idle, Working, PickUp, Place).
 	UPROPERTY(VisibleAnywhere, Category = "Robot|Animation")
@@ -160,7 +160,7 @@ public:
 
 protected:
 	EWorkerState State = EWorkerState::Idle;
-	TObjectPtr<ABucket> CurrentBucket;
+	TObjectPtr<APayloadCarrier> CurrentBucket;
 	TWeakObjectPtr<USceneComponent> FromSlotPtr;
 	TWeakObjectPtr<USceneComponent> ToSlotPtr;
 	FVector TargetLocation = FVector::ZeroVector;

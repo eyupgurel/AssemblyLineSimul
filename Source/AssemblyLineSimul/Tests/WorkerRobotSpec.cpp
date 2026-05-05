@@ -4,7 +4,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Animation/AnimSingleNodeInstance.h"
-#include "Bucket.h"
+#include "PayloadCarrier.h"
 #include "Station.h"
 #include "TestStations.h"
 #include "WorkerRobot.h"
@@ -62,11 +62,11 @@ namespace AssemblyLineSimulTests
 		return World->SpawnActor<AWorkerRobot>(AWorkerRobot::StaticClass(), Location, FRotator::ZeroRotator, Params);
 	}
 
-	static ABucket* SpawnBucketAt(UWorld* World, const FVector& Location)
+	static APayloadCarrier* SpawnBucketAt(UWorld* World, const FVector& Location)
 	{
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		return World->SpawnActor<ABucket>(ABucket::StaticClass(), Location, FRotator::ZeroRotator, Params);
+		return World->SpawnActor<APayloadCarrier>(APayloadCarrier::StaticClass(), Location, FRotator::ZeroRotator, Params);
 	}
 
 	// Drive the worker FSM directly — World->Tick on a transient test world doesn't reliably
@@ -178,7 +178,7 @@ void FWorkerRobotSpec::Define()
 				bFired = true;
 			});
 
-			ABucket* Bucket = SpawnBucketAt(TW.World, FVector::ZeroVector);
+			APayloadCarrier* Bucket = SpawnBucketAt(TW.World, FVector::ZeroVector);
 			Worker->BeginTask(Bucket, Station->InputSlot, Station->OutputSlot, FWorkerTaskComplete());
 			TickWorker(Worker, 50, 0.05f, [&]() { return bFired; });
 
@@ -207,7 +207,7 @@ void FWorkerRobotSpec::Define()
 				bFired = true;
 			});
 
-			ABucket* Bucket = SpawnBucketAt(TW.World, FVector::ZeroVector);
+			APayloadCarrier* Bucket = SpawnBucketAt(TW.World, FVector::ZeroVector);
 			Worker->BeginTask(Bucket, Station->InputSlot, Station->OutputSlot, FWorkerTaskComplete());
 			TickWorker(Worker, 100, 0.05f, [&]() { return bFired; });
 
@@ -346,7 +346,7 @@ void FWorkerRobotSpec::Define()
 			const FVector Origin(0.f, 0.f, 0.f);
 			ATestSyncStation* Station = SpawnStationAt<ATestSyncStation>(TW.World, Origin);
 			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, Origin);
-			ABucket* Bucket = SpawnBucketAt(TW.World, Origin);
+			APayloadCarrier* Bucket = SpawnBucketAt(TW.World, Origin);
 
 			Worker->WorkDuration = 0.f;
 			Worker->AssignStation(Station);
@@ -355,7 +355,7 @@ void FWorkerRobotSpec::Define()
 
 			int32 CompleteCount = 0;
 			Worker->BeginTask(Bucket, Station->InputSlot, Station->OutputSlot,
-				FWorkerTaskComplete::CreateLambda([&CompleteCount](ABucket*) { ++CompleteCount; }));
+				FWorkerTaskComplete::CreateLambda([&CompleteCount](APayloadCarrier*) { ++CompleteCount; }));
 
 			TickWorker(Worker, 100, 0.05f, [&]() { return CompleteCount > 0; });
 
@@ -370,7 +370,7 @@ void FWorkerRobotSpec::Define()
 			const FVector Origin(0.f, 0.f, 0.f);
 			ATestDeferredStation* Station = SpawnStationAt<ATestDeferredStation>(TW.World, Origin);
 			AWorkerRobot* Worker = SpawnWorkerAt(TW.World, Origin);
-			ABucket* Bucket = SpawnBucketAt(TW.World, Origin);
+			APayloadCarrier* Bucket = SpawnBucketAt(TW.World, Origin);
 
 			Worker->WorkDuration = 0.f;
 			Worker->AssignStation(Station);
@@ -379,7 +379,7 @@ void FWorkerRobotSpec::Define()
 
 			int32 CompleteCount = 0;
 			Worker->BeginTask(Bucket, Station->InputSlot, Station->OutputSlot,
-				FWorkerTaskComplete::CreateLambda([&CompleteCount](ABucket*) { ++CompleteCount; }));
+				FWorkerTaskComplete::CreateLambda([&CompleteCount](APayloadCarrier*) { ++CompleteCount; }));
 
 			// Tick enough frames for the worker to enter Working and dispatch ProcessBucket once.
 			TickWorker(Worker, 20, 0.05f, [&]() { return Station->ProcessCallCount > 0; });

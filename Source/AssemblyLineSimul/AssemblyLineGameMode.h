@@ -10,7 +10,7 @@ class UStaticMesh;
 class USkeletalMesh;
 class UInputAction;
 class UInputMappingContext;
-class ABucket;
+class APayloadCarrier;
 class UAgentChatSubsystem;
 class UMacAudioCapture;
 
@@ -40,7 +40,7 @@ public:
 	// Bucket class propagated to the Director so newly-spawned buckets adopt e.g. a
 	// Blueprint subclass that has BilliardBallMaterial set.
 	UPROPERTY(EditAnywhere, Category = "AssemblyLine")
-	TSubclassOf<ABucket> BucketClass;
+	TSubclassOf<APayloadCarrier> CarrierClass;
 
 	// Per-station Working-state duration (seconds) applied to every spawned worker.
 	// Tests spawn workers directly and are unaffected.
