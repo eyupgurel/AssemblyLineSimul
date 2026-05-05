@@ -25,7 +25,13 @@ The project is a worked example of:
 - **A pure-domain DAG executor** for the assembly-line topology
   (Sui-inspired: edges-on-child only, lazy back-edge cache, iterative
   BFS, Kahn's-algorithm cycle check at build time, fan-in
-  wait-and-collect gate, fan-out bucket cloning, multi-instance per kind).
+  wait-and-collect gate, fan-out carrier cloning, multi-instance per kind).
+- **A plug-and-play payload abstraction** (Story 38) — the actor flowing
+  through the line is `APayloadCarrier` with a typed `UPayload`
+  (data) + `UPayloadVisualizer` (presentation) chosen per Blueprint.
+  The bucket-of-numbers + billiard-ball crate is just one
+  (Payload, Visualizer) pair; new agent kinds (text, image, audio)
+  ship their own pair without touching Director / Worker / Cinematic.
 - **Mission-driven spawn** — an Orchestrator agent emits a JSON DAG
   spec from a spoken or file-driven mission; the runtime parses it,
   validates it, and builds the line at runtime — no hardcoded chain,
@@ -44,7 +50,7 @@ The project is a worked example of:
   active bucket and plays a configurable framing-keyframe sequence
   (wide → mid → close → hold) per Working window. Multi-instance
   correct by construction; topology-agnostic.
-- **Strict TDD** — 175 automation specs across 17 spec files plus a
+- **Strict TDD** — 185 automation specs across 19 spec files plus a
   real-Claude FunctionalTest. RED → GREEN → Refactor for every change.
 - **Mid-flight rule changes** propagating through a stateful pipeline
   without breaking the cycle.
@@ -72,6 +78,7 @@ The project is a worked example of:
    - [Chat / rule-update flow](#chat--rule-update-flow)
    - [Orchestrator-authored prompt pipeline](#orchestrator-authored-prompt-pipeline)
    - [Cinematic camera state machine](#cinematic-camera-state-machine)
+   - [Payload + Carrier abstraction (Story 38 deep dive)](#payload--carrier-abstraction-story-38-deep-dive)
 6. [User stories](#user-stories)
 7. [Testing](#testing)
 8. [Project layout](#project-layout)
@@ -234,7 +241,7 @@ graph TB
   subgraph Spawned per mission
     Stations["N× AStation subclasses<br/>Generator/Filter/Sorter/Checker<br/>Each carries an FNodeRef (Kind, Instance) so two<br/>Filters of the same Kind don't collide"]
     Workers[N× AWorkerRobot<br/>Phase events broadcast FNodeRef]
-    Buckets[ABucket<br/>billiard-ball viz]
+    Carriers["APayloadCarrier<br/>typed UPayload + UPayloadVisualizer (Story 38)<br/>defaults: UIntegerArrayPayload + UBilliardBallVisualizer<br/>= the wireframe-crate-with-billiard-balls bucket"]
     Cinematic[ACinematicCameraDirector<br/>One wide-overview shot + permanent FollowCamera<br/>Mode: WideOverview / FollowingBucket / ChasingBucket<br/>Framing-keyframe sequence drives the zoom-dance]
     Feedback[AAssemblyLineFeedback<br/>red/green flash lights]
   end
@@ -282,7 +289,7 @@ graph TB
   Stations -- SpeakAloud verdict TTS --> Chat
 
   Dir -- dispatches via DAG --> Workers
-  Workers -- carry --> Buckets
+  Workers -- carry --> Carriers
   Cinematic -- subscribes --> Dir
   Feedback -- subscribes --> Dir
   Voice -- OnActiveAgentChanged --> GM
@@ -400,7 +407,7 @@ graph TB
   end
 
   subgraph "Layer 3 — Runtime"
-    Director[UAssemblyLineDirector::OnRobotDoneAt<br/>Walks GetSuccessors not hardcoded chain<br/>Fan-out: clones bucket K times<br/>Fan-in: queue + wait for all parents]
+    Director[UAssemblyLineDirector::OnRobotDoneAt<br/>Walks GetSuccessors not hardcoded chain<br/>Fan-out: clones carrier K times<br/>Fan-in: queue + wait for all parents]
   end
 
   subgraph "Layer 4 — Authoring"
@@ -575,8 +582,8 @@ worker"* — same cost as the old hardcoded chain.
 are keyed on `FNodeRef`, not `EStationType`:
 - `StationByNodeRef : TMap<FNodeRef, AStation*>` — registered station per `(Kind, Instance)`.
 - `RobotByNodeRef   : TMap<FNodeRef, AWorkerRobot*>` — one worker per spawned station.
-- `OnRobotDoneAt(const FNodeRef& Ref, ABucket*)` is canonical; the
-  old `EStationType`-only signature is a thin shim over `{Kind, 0}`
+- `OnRobotDoneAt(const FNodeRef& Ref, APayloadCarrier*)` is canonical;
+  the old `EStationType`-only signature is a thin shim over `{Kind, 0}`
   for backward-compat.
 - `DispatchToStation` and the worker-completion lambda capture `FNodeRef`
   end-to-end so Filter/0 finishing consults Filter/0's successors,
@@ -588,19 +595,21 @@ hails like *"Hey Filter"* still route to the first Filter (per-instance
 voice routing is a deferred future story).
 
 **Fan-out (one parent → K successors).** When `GetSuccessors(Node)`
-returns more than one, the bucket gets cloned K times via
-`ABucket::CloneIntoWorld` (deep copy of `Contents` + materials), one
-clone dispatched to each branch. The original is destroyed so the K
-clones aren't ambiguous-looking duplicates.
+returns more than one, the carrier gets cloned K times via
+`APayloadCarrier::CloneIntoWorld` (Story 38: spawn same Class,
+deep-clone the typed `Payload` via `Payload->Clone(Outer)`, fresh
+visualizer per clone), one clone dispatched to each branch. The
+original is destroyed so the K clones aren't ambiguous-looking
+duplicates.
 
 ```mermaid
 flowchart LR
-  Source[Source bucket<br/>Contents = 1,2,3] --> Done([OnRobotDoneAt])
+  Source[Source carrier<br/>Payload->Items = 1,2,3] --> Done([OnRobotDoneAt])
   Done --> Lookup["GetSuccessors(Node)<br/>returns A, B, C"]
   Lookup --> Clone["For each successor:<br/>Clone = CloneIntoWorld(World, SpawnLoc)<br/>QueueForFanInOrDispatch or DispatchToStation"]
-  Clone --> CloneA[Clone A<br/>Contents = 1,2,3<br/>→ DispatchToStation]
-  Clone --> CloneB[Clone B<br/>Contents = 1,2,3<br/>→ DispatchToStation]
-  Clone --> CloneC[Clone C<br/>Contents = 1,2,3<br/>→ DispatchToStation]
+  Clone --> CloneA[Clone A<br/>Payload->Items = 1,2,3<br/>→ DispatchToStation]
+  Clone --> CloneB[Clone B<br/>Payload->Items = 1,2,3<br/>→ DispatchToStation]
+  Clone --> CloneC[Clone C<br/>Payload->Items = 1,2,3<br/>→ DispatchToStation]
   Clone --> Destroy["Source.Destroy()"]
 ```
 
@@ -611,9 +620,10 @@ on the Director hold the gate state:
 - `WaitingFor[Child] : TSet<FNodeRef>` — parents not yet arrived for
   the current cycle. Lazily initialized from `GetParents(Child)` on
   first arrival.
-- `InboundBuckets[Child] : TArray<TWeakObjectPtr<ABucket>>` — the
-  buckets queued so far; weak-ptr for safety against destruction
-  windows.
+- `InboundBuckets[Child] : TArray<TWeakObjectPtr<APayloadCarrier>>` —
+  the carriers queued so far; weak-ptr for safety against destruction
+  windows. (Field name kept "InboundBuckets" for git-blame continuity;
+  payload type is now `APayloadCarrier` per Story 38.)
 
 ```mermaid
 stateDiagram-v2
@@ -889,8 +899,11 @@ Design choices recorded so the next person doesn't relitigate them:
 - **No reference counting for cleanup.** When clear, we destroy actors
   and reset maps wholesale; in-flight Claude callbacks bail safely
   via `TWeakObjectPtr`.
-- **No `ProcessBucket` overload** — one signature: `TArray<ABucket*>`.
-  Single-parent stations just read `Inputs[0]`.
+- **No `ProcessBucket` overload** — one signature:
+  `TArray<APayloadCarrier*>`. Single-parent stations just read
+  `Inputs[0]`. (Method name `ProcessBucket` and field name
+  `InboundBuckets` are kept verbatim post-Story-38 — they're
+  load-bearing identifiers in the test suite and prompt files.)
 - **No global executor singleton.** `FAssemblyLineDAG` lives on
   `UAssemblyLineDirector` (a `UWorldSubsystem`).
 - **No persistence beyond in-memory.** A `Store` trait was sketched
@@ -1153,6 +1166,165 @@ actor.
   drive `D->Tick(dt)` directly and observe deterministic
   interpolation without depending on world tick scheduling.
 
+### Payload + Carrier abstraction (Story 38 deep dive)
+
+Story 38 carved the "thing flowing through the line" into a
+plug-and-play three-piece structure so the demo can host more than
+the bucket-of-numbers + billiard-balls genre. The Director, the
+Worker FSM, the Cinematic camera, the Feedback flashes, and every
+Station base hook see only `APayloadCarrier`; what's *inside* the
+carrier (numbers? text? image refs? audio buffers?) and *how it
+renders* (numbered spheres? scrolling text? a canvas?) are decided
+by the carrier's two pluggable component classes.
+
+#### The three pieces
+
+```mermaid
+graph LR
+  subgraph "APayloadCarrier (actor)"
+    direction TB
+    Carrier[APayloadCarrier<br/>SceneRoot + PayloadClass + VisualizerClass]
+    Carrier -- owns --> Payload
+    Carrier -- attaches --> Visualizer
+  end
+
+  subgraph "UPayload (data)"
+    Payload[UPayload abstract<br/>ItemCount, IsEmpty, ToPromptString, Clone, OnChanged]
+    IntPayload[UIntegerArrayPayload<br/>TArray int32 Items]
+    Payload -.subclass.-> IntPayload
+  end
+
+  subgraph "UPayloadVisualizer (presentation)"
+    Vis[UPayloadVisualizer abstract<br/>BindPayload, Rebuild, HighlightItemsAtIndices]
+    Billiard[UBilliardBallVisualizer<br/>12-edge crate + numbered spheres]
+    Vis -.subclass.-> Billiard
+  end
+
+  Vis -- subscribes to --> Payload
+  Payload -- OnChanged Broadcast --> Vis
+  Vis -- reads typed data via Cast --> Payload
+```
+
+**APayloadCarrier** is the Actor — the thing the worker physically
+picks up and walks down the line. It owns a `SceneRoot` for
+positioning and two designer-set class properties (`PayloadClass`,
+`VisualizerClass`). At `OnConstruction` it instantiates one of each
+from those classes, attaches the visualizer to RootComponent, and
+calls `Visualizer->BindPayload(Payload)` so the visualizer
+re-renders whenever the payload mutates.
+
+**UPayload** is the abstract data UObject. Five virtual hooks:
+`ItemCount` / `IsEmpty` (used by Director's empty-bucket recycle
+path), `ToPromptString` (rendered into Claude prompts via the
+carrier's `GetContentsString` pass-through), `Clone(Outer)` (deep
+copy, called by `CloneIntoWorld` for fan-out branches), and the
+`OnChanged` multicast delegate that visualizers subscribe to.
+
+**UPayloadVisualizer** is the abstract SceneComponent that renders
+the payload as scene primitives. Its `BindPayload` subscribes to
+`Payload->OnChanged` so any station mutation auto-triggers `Rebuild`.
+`HighlightItemsAtIndices` is the Story 25 "Filter selected glow"
+hook, now polymorphic — billiard balls glow gold, future scroll
+lines could underline, future canvases could green-border.
+
+#### How a station reads the payload
+
+Every concrete `AStation` subclass casts the carrier's payload to
+its expected type at `ProcessBucket` entry and either reads or
+writes the typed data. From `StationSubclasses.cpp` (Filter):
+
+```cpp
+void AFilterStation::ProcessBucket(const TArray<APayloadCarrier*>& Inputs,
+                                    FStationProcessComplete OnComplete)
+{
+    APayloadCarrier* B = Inputs[0];
+    UIntegerArrayPayload* P = Cast<UIntegerArrayPayload>(B->Payload);
+    if (!P)
+    {
+        UE_LOG(LogStation, Warning,
+            TEXT("[Filter] expected UIntegerArrayPayload; got %s"),
+            *GetNameSafe(B->Payload));
+        // Pass through gracefully on type mismatch; the demo's prompt
+        // contract still wants "accepted" so the cycle doesn't deadlock.
+        FStationProcessResult R; R.bAccepted = true;
+        OnComplete.ExecuteIfBound(R);
+        return;
+    }
+    // ... LLM round-trip ...
+    P->Items = MoveTemp(KeptNumbers);
+    P->OnChanged.Broadcast();   // Visualizer rebuilds; rejected balls vanish
+    B->HighlightItemsAtIndices(KeptIndices);  // pass-through to visualizer
+}
+```
+
+The pattern repeats verbatim across Generator / Filter / Sorter /
+Checker. Each station is one cast away from polymorphic; agents
+that emit text or images would cast to a different `UPayload`
+subclass (e.g. `UTextPayload`, `UImageRefPayload`) and the rest of
+the runtime never knows.
+
+#### Adding a new (Payload, Visualizer) pair
+
+The whole point of Story 38 is that this is mechanical:
+
+1. Add `UMyPayload : public UPayload` with whatever fields fit
+   (override `ItemCount`, `ToPromptString`, `Clone`).
+2. Add `UMyVisualizer : public UPayloadVisualizer` that overrides
+   `Rebuild` to read `Cast<UMyPayload>(BoundPayload)` and spawn its
+   own scene components.
+3. Either (a) write a station subclass that casts to `UMyPayload`
+   in its own `ProcessBucket`, or (b) author a Blueprint subclass
+   of `APayloadCarrier` setting `PayloadClass = UMyPayload` and
+   `VisualizerClass = UMyVisualizer`, and point
+   `Director->CarrierClass` at it.
+
+Director / Worker FSM / Cinematic camera / Feedback flashes / DAG
+runtime: zero lines change. **The abstraction was paid for in
+Story 38 so future agent genres don't have to pay it again.**
+
+#### Why composition (vs inheritance / discriminated union)
+
+Three options were on the table:
+
+1. **Inheritance** — `ABucket` becomes abstract; subclass per genre
+   (`ANumbersBucket`, `ATextBucket`, ...). Rejected: every new
+   genre forces a new Actor class, and combining "bucket-of-numbers
+   data" with "scrolling-text visualization" is impossible without
+   diamond inheritance.
+2. **Discriminated union** — `ABucket` carries an `EPayloadKind`
+   enum + a fat struct; stations switch on the enum. Rejected:
+   adds-an-enum-value-touches-everything anti-pattern; doesn't
+   compose with arbitrary visualizers; all serialization is
+   bespoke.
+3. **Composition** (chosen) — carrier composes payload + visualizer
+   from class properties. Designer-friendly via Blueprint; new
+   genres are pure additions (no enum, no switch); payload data
+   and presentation evolve independently.
+
+Story 38's design doc records the call so the next person doesn't
+re-litigate it.
+
+#### Visual byte-identity with the pre-Story-38 ABucket
+
+The default `(UIntegerArrayPayload, UBilliardBallVisualizer)` pair
+is set in `APayloadCarrier`'s constructor and the
+`UBilliardBallVisualizer` constructor `FObjectFinder`-loads
+`/Game/M_BilliardBall.M_BilliardBall` itself, so a vanilla
+`APayloadCarrier::StaticClass()` spawn produces the exact same
+12-edge wireframe crate + per-number colored billiard sphere with
+canvas-rendered numbered texture as the pre-Story-38 `ABucket`.
+**No Blueprint subclass is required** for the typical
+4-station demo to look identical.
+
+One real correction was needed: pre-Story-38 the balls' relative
+rotation `FRotator(-90, 0, 0)` interacted with `ABucket`'s
+non-uniformly-scaled cube `RootComponent` to skew each ball's
+local axes by the parent scale. With Story 38's clean
+`USceneComponent` SceneRoot the skew is gone, so the ball rotation
+flipped to `FRotator(+90, 0, 0)` to bring the painted-number side
+back to the top. Same value in name, same visual outcome — the
+parent transform changed under the hood.
+
 ## User stories
 
 Stories 1–13 were implemented before the formal `Stories/` folder
@@ -1216,8 +1388,8 @@ existed; their full intent lives in commit messages (`git log
 
 ### Phase 13 — DAG executor (stories 31a–31e)
 - **[Story 31a](Stories/Story_31a_DAG_Foundation.md)** — `FNodeRef`, `FStationNode`, `FAssemblyLineDAG` with Kahn's cycle check; lazy back-edge cache; iterative BFS for `GetAncestors`. Director's `OnRobotDoneAt` consults `GetSuccessors`. Checker derived rule walks ancestors. Linear chain still byte-identical.
-- **[Story 31b](Stories/Story_31b_Multi_Input_Signature.md)** — `AStation::ProcessBucket` signature changes to `(const TArray<ABucket*>& Inputs, …)`. Sets up multi-input fan-in.
-- **[Story 31c](Stories/Story_31c_Fan_Out.md)** — K > 1 successors → clone bucket K times via `ABucket::CloneIntoWorld`, dispatch each clone, destroy original.
+- **[Story 31b](Stories/Story_31b_Multi_Input_Signature.md)** — `AStation::ProcessBucket` signature changes to `(const TArray<APayloadCarrier*>& Inputs, …)`. Sets up multi-input fan-in. (Was `ABucket*` pre-Story-38.)
+- **[Story 31c](Stories/Story_31c_Fan_Out.md)** — K > 1 successors → clone carrier K times via `APayloadCarrier::CloneIntoWorld` (post-Story-38: deep-clones the typed `Payload` via `Payload->Clone(Outer)`), dispatch each clone, destroy original.
 - **[Story 31d](Stories/Story_31d_Fan_In.md)** — K > 1 parents → wait-and-collect gate. `WaitingFor` + `InboundBuckets`. Merge fires when last parent arrives. `Inputs[0]` survives, `Inputs[1..N-1]` destroyed. Wait state resets per cycle.
 - **[Story 31e](Stories/Story_31e_DAG_Test_Builder.md)** — `FDAGBuilder` fluent test fixture. Replaces hand-rolled `FStationNode{...}` literals across 6 spec sites.
 
@@ -1247,6 +1419,10 @@ needed all three to actually run end-to-end.
 
 - **[Story 37](Stories/Story_37_Any_DAG_Terminal_Completes_Cycle.md)** — Any DAG terminal completes the cycle. Pre-Story-35 only Checker could be a terminal; the runtime special-cased "Checker no successors → complete cycle." Multi-instance shapes put non-Checker nodes at the terminal (Filter/1 in the 5-stage mission), and the runtime froze with a warning. New `CompleteCycle` helper extracted from the Checker-terminal path; the no-successors branch now distinguishes registered terminal (`DAG.FindNode(Ref) != nullptr` → `CompleteCycle`) from unregistered Ref (warning preserved as a misconfiguration signal).
 
+### Phase 19 — Plug-and-play payload abstraction (story 38)
+
+- **[Story 38](Stories/Story_38_Payload_Carrier_Abstraction.md)** — The "thing flowing through the line" stops being one hardcoded class (`ABucket` with a `TArray<int32> Contents` field and a wireframe-crate-with-billiard-balls visualization baked in) and becomes three composable pieces: `APayloadCarrier` (the actor) holds a typed `UPayload` (data) and a `UPayloadVisualizer` (presentation), both pluggable per Blueprint via `PayloadClass` + `VisualizerClass` UPROPERTYs. Default pair (`UIntegerArrayPayload` + `UBilliardBallVisualizer`) preserves byte-identical visuals and behavior for the existing 4-station mission — the `M_BilliardBall` master material is loaded by the visualizer's constructor via `FObjectFinder`, so no Blueprint subclass is required. New agent kinds (text agents, image agents, audio agents) ship a new `UPayload` subclass + matching `UPayloadVisualizer` without editing Director / Worker / Cinematic / Station runtime — stations just `Cast<UExpectedPayload>(B->Payload)` at `ProcessBucket` entry. ABucket deleted; `Bucket` kept as the colloquial visual term, `Carrier` as the technical/runtime term. Bulk rename across 9 production files + 7 specs (`Bucket→Carrier`, `BucketClass→CarrierClass`); `BucketSpec` retired; new specs (`IntegerArrayPayloadSpec` + `PayloadCarrierSpec` + `BilliardBallVisualizerSpec`) replace it. 185/185 specs green. Method names `ProcessBucket` and field names `InboundBuckets` are intentionally kept verbatim — they're load-bearing identifiers in the test suite and agent prompt files.
+
 ## Testing
 
 The project uses **UE Automation Specs** (BDD-style `Describe` / `It`)
@@ -1264,10 +1440,13 @@ plus one **FunctionalTest** actor for end-to-end coverage.
 Then `grep -c 'Result={Success}' /tmp/auto.log` for a pass count and
 `grep -c 'Result={Fail}' /tmp/auto.log` for a fail count.
 
-**Current coverage: 175 specs across 17 spec files plus the
+**Current coverage: 185 specs across 19 spec files plus the
 FunctionalTest** (every spec passes against real Anthropic + OpenAI
 APIs when keys are configured; specs that don't need network use
-synthesised LLM responses fed through public test seams).
+synthesised LLM responses fed through public test seams). The +10
+delta over 175 is Story 38: `BucketSpec` retired; replaced by
+`IntegerArrayPayloadSpec` + `PayloadCarrierSpec` +
+`BilliardBallVisualizerSpec`.
 
 | Spec file | What it locks down |
 | --- | --- |
@@ -1276,8 +1455,10 @@ synthesised LLM responses fed through public test seams).
 | `AssemblyLineDAGSpec` | Story 31a DAG: `BuildFromDAG` rejects cycles via Kahn's algorithm (returns false + leaves DAG empty); `GetParents` / `GetSuccessors` / `GetAncestors` produce deterministic-order results; lazy back-edge cache builds on first `GetSuccessors` call; source/terminal node detection. |
 | `AssemblyLineDirectorSpec` | Worker phase events re-broadcast as `OnStationActive` **with FNodeRef payload (Story 36)**; empty-bucket recycle path; **fan-out (Story 31c) clones K times and destroys source**; **fan-in (Story 31d) wait-and-collect gate fires merge once both parents arrive and re-arms per cycle**; **`StartAllSourceCycles` (Story 32b) dispatches one bucket per source node**; **`ClearLineState` (Story 34) — empties StationByNodeRef (preserves Orchestrator), RobotByNodeRef, WaitingFor, InboundBuckets; resets DAG to NumNodes==0; cancels recycle/autoloop timers via the `CreateWeakLambda` refactor**; **multi-instance per Kind (Story 35) — RegisterStation auto-instances via per-Kind counter, two Filters get distinct `{Filter,0}` and `{Filter,1}` registrations, `OnRobotDoneAt(FNodeRef)` consults the right successors, GetStationOfType backward-compat shim returns Instance 0**; **Checker mid-chain handling (Story 35) — terminal vs mid-chain placement; mid-chain PASS forwards silently, REJECT routes via SendBackTo**; **any DAG terminal completes the cycle (Story 37) — registered terminal broadcasts `OnCycleCompleted` via the new `CompleteCycle` helper; unregistered Ref still warns**. |
 | `AssemblyLineFeedbackSpec` | Accept/reject light spawning at the bucket location. |
-| `AssemblyLineGameModeSpec` | **`SpawnOrchestrator` (Story 32b) spawns exactly one `AOrchestratorStation` and zero workers + registers with the Director**; **`SpawnLineFromSpec` spawns one station + worker per node, applies per-node rules, picks the right subclass per `Kind`, leaves the world untouched on cycles**; **multi-instance per Kind (Story 35) — accepts a 5-node spec with two Filters, spawns 5 stations + 5 workers, each station's `NodeRef` matches its spec node's NodeRef, GetStationOfType returns Instance 0 (backward-compat shim)**; **`SpawnCinematicDirector` (Story 36) authors exactly ONE wide-overview shot regardless of station count + a non-empty `DefaultFollowSequence` zoom dance + spawns the permanent FollowCamera**; **`SendDefaultMission` (Story 33a) reads Mission section + routes through chat; no-op when chat unavailable**; **`WriteOrchestratorAuthoredPrompts` (Story 33b) writes Saved/Agents/<Kind>.md with Role + spec.Rule + static ProcessBucketPrompt + Checker DerivedRuleTemplate preserved**; **`ClearExistingLine` (Story 34) destroys each actor class, preserves Orchestrator + AssemblyLineFloor tiles, no-op on empty world, wipes stale Saved/Agents/**; **`HandleDAGProposed` re-mission tests — second invocation leaves only mission B's actors (the original duplicate-bucket bug); preserves Orchestrator registration; in-flight bucket destroyed; subsequent reads pick up new mission's Saved/Agents/ Role**; propagates `WorkerRobotMeshAsset` / `BucketClass`; `SpawnFloor` (Story 20). |
-| `BucketSpec` | Crate construction, `RefreshContents` add/remove, billiard MID wiring, `HighlightBallsAtIndices` (Story 25), **`CloneIntoWorld` (Story 31c) — distinct ABucket actor with copied Contents and propagated `BilliardBallMaterial`**. |
+| `AssemblyLineGameModeSpec` | **`SpawnOrchestrator` (Story 32b) spawns exactly one `AOrchestratorStation` and zero workers + registers with the Director**; **`SpawnLineFromSpec` spawns one station + worker per node, applies per-node rules, picks the right subclass per `Kind`, leaves the world untouched on cycles**; **multi-instance per Kind (Story 35) — accepts a 5-node spec with two Filters, spawns 5 stations + 5 workers, each station's `NodeRef` matches its spec node's NodeRef, GetStationOfType returns Instance 0 (backward-compat shim)**; **`SpawnCinematicDirector` (Story 36) authors exactly ONE wide-overview shot regardless of station count + a non-empty `DefaultFollowSequence` zoom dance + spawns the permanent FollowCamera**; **`SendDefaultMission` (Story 33a) reads Mission section + routes through chat; no-op when chat unavailable**; **`WriteOrchestratorAuthoredPrompts` (Story 33b) writes Saved/Agents/<Kind>.md with Role + spec.Rule + static ProcessBucketPrompt + Checker DerivedRuleTemplate preserved**; **`ClearExistingLine` (Story 34) destroys each actor class, preserves Orchestrator + AssemblyLineFloor tiles, no-op on empty world, wipes stale Saved/Agents/**; **`HandleDAGProposed` re-mission tests — second invocation leaves only mission B's actors (the original duplicate-bucket bug); preserves Orchestrator registration; in-flight bucket destroyed; subsequent reads pick up new mission's Saved/Agents/ Role**; propagates `WorkerRobotMeshAsset` / `CarrierClass` (was `BucketClass` pre-Story-38); `SpawnFloor` (Story 20). |
+| `IntegerArrayPayloadSpec` | **Story 38** — `UIntegerArrayPayload` data type: `ItemCount`/`IsEmpty`, `ToPromptString` formats as `[1, 2, 3]`, `Clone(Outer)` deep-copies independently, `SetItems` mutates + broadcasts `OnChanged` once. |
+| `PayloadCarrierSpec` | **Story 38** — `APayloadCarrier` integration: `OnConstruction` auto-instantiates `Payload` + `Visualizer` from `PayloadClass`/`VisualizerClass` defaults; visualizer auto-binds to payload; `GetContentsString` delegates to `Payload->ToPromptString` (returns `[]` when null); `CloneIntoWorld` (Story 31c, post-38) returns a distinct actor with deep-cloned payload and a fresh visualizer bound to the clone's payload; `HighlightItemsAtIndices` delegates to visualizer. |
+| `BilliardBallVisualizerSpec` | **Story 38** — `UBilliardBallVisualizer`: crate built once with 12 cylinder edges; `Rebuild` on payload change re-spawns one numbered sphere per item; `OnVisualizationRevealed` fires on first non-empty rebuild; `HighlightItemsAtIndices` swaps the highlight material on the targeted balls. |
 | `CinematicCameraDirectorSpec` | **Story 36 — subject-tracking camera. Default mode `WideOverview` with no follow subject; `Start` spawns the wide-overview shot camera + the permanent FollowCamera; `EnterFollowingBucket` switches mode + sets subject + places camera at first-keyframe offset; most-recent-subject tiebreak replaces subject + restarts sequence; `Tick` positions FollowCamera at subject + active-keyframe offset; interpolates between keyframes over time (60-step manual tick verifies midway-Z); `FramingByKind` per-Kind override applies when present, falls back to `DefaultFollowSequence`; `HandleStationIdle` returns to WideOverview; subject destroyed mid-tick → falls back to WideOverview; chase preserved (HandleCycleRejected enters ChasingBucket mode); chase + follow share the same FollowCamera actor; null-bucket chase falls back to WideOverview**. |
 | `DAGBuilderSpec` | Story 31e fluent fixture: `Source` adds a parent-less node, `Edge(from, to)` adds an edge with `AddUnique` parent dedup, `Build()` returns the right `TArray<FStationNode>`. |
 | `OpenAIAPISubsystemSpec` | Whisper multipart body shape: `language=en` pinned, `model=whisper-1`, file part with filename + MIME, raw audio bytes embedded verbatim. |
@@ -1317,9 +1498,10 @@ AssemblyLineSimul/
 │   └── DAG_Architecture.md   ← Layer 1-5 design + 5 locked decisions + Sui refs
 ├── Content/
 │   ├── BP_AssemblyLineGameMode.uasset
-│   ├── BP_BilliardBucket.uasset
 │   ├── L_AssemblyDemo.umap
-│   ├── M_BilliardBall.uasset
+│   ├── M_BilliardBall.uasset    ← master material for billiard balls;
+│   │                              UBilliardBallVisualizer auto-loads
+│   │                              this in its ctor (Story 38, no BP needed)
 │   ├── Agents/               ← Story 27: per-agent prompts (loaded by AgentPromptLibrary)
 │   │   ├── ChatPrompt.md     ← shared chat templates (default + OrchestratorChatPromptTemplate)
 │   │   ├── Generator.md
@@ -1342,7 +1524,8 @@ AssemblyLineSimul/
 │   │                                     SendDefaultMission (M key, Story 33a)
 │   ├── AssemblyLineDirector.{h,cpp}    ← Holds FAssemblyLineDAG; StationByNodeRef +
 │   │                                     RobotByNodeRef multi-instance maps (Story 35);
-│   │                                     OnRobotDoneAt(FNodeRef, ABucket*) canonical;
+│   │                                     OnRobotDoneAt(FNodeRef, APayloadCarrier*) canonical
+│   │                                     (Story 38 rename from ABucket*);
 │   │                                     fan-in wait gate; recycle; ClearLineState (Story 34)
 │   │                                     + WeakLambda timers; CompleteCycle (Story 37) for
 │   │                                     any registered terminal
@@ -1350,16 +1533,30 @@ AssemblyLineSimul/
 │   │                                     FAgentChatMessage
 │   │
 │   ├── Station.{h,cpp}                 ← base station: ActiveLight, SpeakAloud (TTS-only),
-│   │                                     ProcessBucket(TArray<ABucket*>, OnComplete);
+│   │                                     ProcessBucket(TArray<APayloadCarrier*>, OnComplete)
+│   │                                     (Story 38 rename from ABucket*); subclasses
+│   │                                     Cast<UIntegerArrayPayload>(B->Payload) at entry;
 │   │                                     FNodeRef NodeRef field auto-set by Director (Story 35)
 │   ├── StationSubclasses.{h,cpp}       ← Generator, Filter, Sorter, Checker, Orchestrator
 │   │                                     Filter::FindKeptIndices for selection preview
 │   │                                     Checker::GetEffectiveRule walks DAG ancestors
 │   ├── WorkerRobot.{h,cpp}             ← FSM, UE5 Manny mannequin, green ActiveLight;
 │   │                                     phase events broadcast FNodeRef (Story 36)
-│   ├── Bucket.{h,cpp}                  ← wireframe crate + billiard balls
-│   │                                     CloneIntoWorld for Story 31c fan-out
-│   │                                     HighlightBallsAtIndices for Filter selection
+│   │
+│   │ ─── Story 38 — Payload + Carrier abstraction (replaces ABucket) ───
+│   ├── Payload.{h,cpp}                  ← UPayload (abstract data) + UIntegerArrayPayload
+│   │                                     concrete: TArray<int32> Items; ToPromptString;
+│   │                                     Clone(Outer) for fan-out deep-copy; OnChanged
+│   │                                     multicast that visualizers subscribe to
+│   ├── PayloadVisualizer.{h,cpp}        ← UPayloadVisualizer (abstract SceneComponent) +
+│   │                                     UBilliardBallVisualizer concrete: 12-edge wireframe
+│   │                                     crate + per-item canvas-rendered numbered spheres,
+│   │                                     HighlightItemsAtIndices for Filter selection,
+│   │                                     auto-rebuilds on Payload->OnChanged
+│   ├── PayloadCarrier.{h,cpp}           ← APayloadCarrier actor: PayloadClass +
+│   │                                     VisualizerClass UPROPERTYs, OnConstruction
+│   │                                     instantiates both, attaches Visualizer to RootComponent
+│   │                                     and binds Payload; CloneIntoWorld for fan-out
 │   │
 │   ├── DAG/                            ← Story 31 — pure-domain DAG layer
 │   │   ├── AssemblyLineDAG.{h,cpp}     ← FNodeRef, FStationNode, FAssemblyLineDAG
@@ -1387,7 +1584,7 @@ AssemblyLineSimul/
 │   ├── JsonHelpers.h                   ← shared ExtractJsonObject for chatty LLM replies
 │   │
 │   └── Tests/                          ← all *Spec.cpp + the FunctionalTest actor
-└── Stories/                            ← markdown specs for stories 14-37 (21 abandoned)
+└── Stories/                            ← markdown specs for stories 14-38 (21 abandoned)
 ```
 
 ## External services & keys

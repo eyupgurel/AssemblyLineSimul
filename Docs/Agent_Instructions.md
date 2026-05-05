@@ -5,6 +5,15 @@ as authoritative `.md` source under `Content/Agents/`. This doc is
 a thin pointer at the files; the prompts themselves are no longer
 duplicated here, so they cannot drift.
 
+> **Story 38 vocabulary note.** The `.md` placeholders kept their
+> historic names (`{{input}}`, `{{bucket}}`) and the
+> `ProcessBucketPrompt` section name is unchanged — agent prompts
+> are operator-facing prose where "bucket" reads naturally. Under
+> the hood the runtime now passes an `APayloadCarrier*` whose
+> typed `UPayload` provides `ToPromptString()`; the carrier's
+> `GetContentsString()` is a thin pass-through. See README §
+> "Payload + Carrier abstraction (Story 38 deep dive)".
+
 The runtime loader is `AgentPromptLibrary` ([header](../Source/AssemblyLineSimul/AgentPromptLibrary.h),
 [cpp](../Source/AssemblyLineSimul/AgentPromptLibrary.cpp)) — a
 namespace of free functions. It reads each `.md` file once per
@@ -67,8 +76,8 @@ a warning.
 | Placeholder | Used by | Source |
 |---|---|---|
 | `{{rule}}` | every `ProcessBucketPrompt` + `ChatPromptTemplate` | `EffectiveRule` (Checker) or `CurrentRule` (others) |
-| `{{input}}` | Filter / Sorter `ProcessBucketPrompt` | `Bucket->GetContentsString()` |
-| `{{bucket}}` | Checker `ProcessBucketPrompt` + `ChatPromptTemplate` | `Bucket->GetContentsString()` (or `(empty)` for chat with no bucket at the dock) |
+| `{{input}}` | Filter / Sorter `ProcessBucketPrompt` | `Carrier->GetContentsString()` (Story 38 — pass-through that delegates to `Carrier->Payload->ToPromptString()`; renamed from `Bucket->GetContentsString()`) |
+| `{{bucket}}` | Checker `ProcessBucketPrompt` + `ChatPromptTemplate` | `Carrier->GetContentsString()` (or `(empty)` for chat with no carrier at the dock) |
 | `{{agent}}` | `ChatPromptTemplate` | Station name |
 | `{{role}}` | `ChatPromptTemplate` | Loaded from agent's `## Role` section |
 | `{{history}}` | `ChatPromptTemplate` | Per-agent chat history block ("Role: text\n" lines) |
