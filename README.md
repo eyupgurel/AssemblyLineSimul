@@ -604,12 +604,12 @@ duplicates.
 
 ```mermaid
 flowchart LR
-  Source[Source carrier<br/>Payload->Items = 1,2,3] --> Done([OnRobotDoneAt])
+  Source["Source carrier<br/>Payload.Items = [1,2,3]"] --> Done([OnRobotDoneAt])
   Done --> Lookup["GetSuccessors(Node)<br/>returns A, B, C"]
   Lookup --> Clone["For each successor:<br/>Clone = CloneIntoWorld(World, SpawnLoc)<br/>QueueForFanInOrDispatch or DispatchToStation"]
-  Clone --> CloneA[Clone A<br/>Payload->Items = 1,2,3<br/>→ DispatchToStation]
-  Clone --> CloneB[Clone B<br/>Payload->Items = 1,2,3<br/>→ DispatchToStation]
-  Clone --> CloneC[Clone C<br/>Payload->Items = 1,2,3<br/>→ DispatchToStation]
+  Clone --> CloneA["Clone A<br/>Payload.Items = [1,2,3]<br/>→ DispatchToStation"]
+  Clone --> CloneB["Clone B<br/>Payload.Items = [1,2,3]<br/>→ DispatchToStation"]
+  Clone --> CloneC["Clone C<br/>Payload.Items = [1,2,3]<br/>→ DispatchToStation"]
   Clone --> Destroy["Source.Destroy()"]
 ```
 
@@ -1181,28 +1181,27 @@ by the carrier's two pluggable component classes.
 
 ```mermaid
 graph LR
-  subgraph "APayloadCarrier (actor)"
-    direction TB
-    Carrier[APayloadCarrier<br/>SceneRoot + PayloadClass + VisualizerClass]
+  subgraph "APayloadCarrier — the actor"
+    Carrier["APayloadCarrier<br/>SceneRoot + PayloadClass + VisualizerClass"]
     Carrier -- owns --> Payload
     Carrier -- attaches --> Visualizer
   end
 
-  subgraph "UPayload (data)"
-    Payload[UPayload abstract<br/>ItemCount, IsEmpty, ToPromptString, Clone, OnChanged]
-    IntPayload[UIntegerArrayPayload<br/>TArray int32 Items]
-    Payload -.subclass.-> IntPayload
+  subgraph "UPayload — data"
+    Payload["UPayload abstract<br/>ItemCount + IsEmpty + ToPromptString + Clone + OnChanged"]
+    IntPayload["UIntegerArrayPayload<br/>TArray int32 Items"]
+    Payload -. subclass .-> IntPayload
   end
 
-  subgraph "UPayloadVisualizer (presentation)"
-    Vis[UPayloadVisualizer abstract<br/>BindPayload, Rebuild, HighlightItemsAtIndices]
-    Billiard[UBilliardBallVisualizer<br/>12-edge crate + numbered spheres]
-    Vis -.subclass.-> Billiard
+  subgraph "UPayloadVisualizer — presentation"
+    Visualizer["UPayloadVisualizer abstract<br/>BindPayload + Rebuild + HighlightItemsAtIndices"]
+    Billiard["UBilliardBallVisualizer<br/>12-edge crate + numbered spheres"]
+    Visualizer -. subclass .-> Billiard
   end
 
-  Vis -- subscribes to --> Payload
-  Payload -- OnChanged Broadcast --> Vis
-  Vis -- reads typed data via Cast --> Payload
+  Visualizer -- subscribes to --> Payload
+  Payload -- OnChanged broadcast --> Visualizer
+  Visualizer -- reads typed data via Cast --> Payload
 ```
 
 **APayloadCarrier** is the Actor — the thing the worker physically
