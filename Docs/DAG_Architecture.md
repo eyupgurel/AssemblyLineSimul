@@ -200,7 +200,7 @@ station impls + their `.md` prompts must update.
 
 ```cpp
 // Old (pre-Story-31b):
-virtual void ProcessBucket(ABucket* Bucket, FStationProcessComplete OnComplete);
+virtual void ProcessBucket(ABucket* Carrier, FStationProcessComplete OnComplete);
 
 // Story 31b — multi-input signature:
 virtual void ProcessBucket(TArray<ABucket*> Inputs, FStationProcessComplete OnComplete);
@@ -222,7 +222,7 @@ equivalent of the pre-Story-38 `Bucket->Contents`).
 
 The `.md` prompt for a station that might receive multi-input adds
 language to the effect of: *"You may receive multiple input
-buckets. Decide based on the rule whether to merge them, compare
+carriers. Decide based on the rule whether to merge them, compare
 them, or pick one."*
 
 ---
@@ -262,7 +262,7 @@ class FDAGExecutor
 
     // On each node completion, set State.GcWatermark = CurrentTick.
     // Periodically: any node with State.GcWatermark < (CurrentTick - GcDepth)
-    // is eligible for cleanup (its bucket can be destroyed, its inbound
+    // is eligible for cleanup (its carrier can be destroyed, its inbound
     // buffer cleared).
 };
 ```
@@ -365,7 +365,7 @@ This architecture is implemented across Stories 31a–31e:
   identical to today; multi-input plumbing exists but isn't
   exercised yet. (Story 38 later swaps `ABucket*` →
   `APayloadCarrier*` in this signature.)
-- **31c — Fan-out.** Bucket cloning + K worker spawning per branch.
+- **31c — Fan-out.** Carrier cloning + K worker spawning per branch.
   `FDAGExecutor::OnNodeCompleted` clones for K children. Tests for
   1→2 and 1→3 branching DAGs. (Story 38 reroutes the deep-copy
   through `Payload->Clone(Outer)` instead of touching the carrier's
@@ -421,7 +421,7 @@ the data.
 
 **Naming kept verbatim** for git-blame continuity and to avoid
 churn in load-bearing identifiers: method `ProcessBucket`, field
-`InboundBuckets`, and the colloquial "bucket" in user-facing prose
+`InboundBuckets`, and the colloquial "carrier" in user-facing prose
 all stay. The technical/runtime term is `carrier`.
 
 The full design (3 architectural options weighed, why composition

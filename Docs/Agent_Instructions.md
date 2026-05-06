@@ -8,11 +8,11 @@ duplicated here, so they cannot drift.
 > **Story 38 vocabulary note.** The `.md` placeholders kept their
 > historic names (`{{input}}`, `{{bucket}}`) and the
 > `ProcessBucketPrompt` section name is unchanged — agent prompts
-> are operator-facing prose where "bucket" reads naturally. Under
-> the hood the runtime now passes an `APayloadCarrier*` whose
-> typed `UPayload` provides `ToPromptString()`; the carrier's
-> `GetContentsString()` is a thin pass-through. See README §
-> "Payload + Carrier abstraction (Story 38 deep dive)".
+> are operator-facing prose where the colloquial word "bucket"
+> reads naturally even though the runtime type is now
+> `APayloadCarrier`. The carrier's `GetContentsString()` is a thin
+> pass-through that delegates to `Payload->ToPromptString()`. See
+> README § "Payload + Carrier abstraction (Story 38 deep dive)".
 
 The runtime loader is `AgentPromptLibrary` ([header](../Source/AssemblyLineSimul/AgentPromptLibrary.h),
 [cpp](../Source/AssemblyLineSimul/AgentPromptLibrary.cpp)) — a
@@ -121,7 +121,7 @@ a warning.
   `max_tokens=512`, and the user message; Anthropic defaults apply
   for everything else.
 
-  > **Heads up:** `max_tokens=512` is a tight cap for big buckets.
+  > **Heads up:** `max_tokens=512` is a tight cap for big payloads.
   > Asking the Generator for ~100 integers can hit the cap; the
   > response truncates mid-array, JSON parsing fails, and the cycle
   > falls through the "LLM failed" branch (still completes, but

@@ -7,7 +7,7 @@ mission out loud — anything from a *"generate numbers, filter primes, sort,
 check"* 4-stage line to a *"generate 20, take only evens, sort descending,
 check, then take only the best 2"* 5-stage line with two Filters — and the
 Orchestrator returns a JSON spec that materializes the topology. Stations
-spawn, workers spawn, the cinematic camera locks onto whichever bucket is
+spawn, workers spawn, the cinematic camera locks onto whichever carrier is
 being processed (zoom-dance: wide → mid → close → hold → out), the
 Orchestrator-authored Role for each agent gets written to `Saved/Agents/`,
 and the first cycle starts. Change your mind mid-session — give a new
@@ -42,12 +42,12 @@ The project is a worked example of:
   and writes it to `Saved/Agents/`. Subsequent voice-chat with each
   agent uses Claude's authored prose.
 - **Re-missioning teardown** — give a new mission mid-session and the
-  previous line (stations, workers, in-flight buckets, cinematic shots,
+  previous line (stations, workers, in-flight carriers, cinematic shots,
   stale `Saved/Agents/` files, Director state, pending timers) is torn
   down atomically before the new line spawns.
 - **Subject-tracking cinematic camera** — replaces the old static
   per-station shots with a single follow camera that locks onto the
-  active bucket and plays a configurable framing-keyframe sequence
+  active carrier and plays a configurable framing-keyframe sequence
   (wide → mid → close → hold) per Working window. Multi-instance
   correct by construction; topology-agnostic.
 - **Strict TDD** — 185 automation specs across 19 spec files plus a
@@ -123,7 +123,7 @@ Role paragraph for each spawned station. The runtime:
 4. Regenerates the cinematic camera shots from the freshly spawned
    positions.
 5. Spawns the feedback actor (red/green flash on Checker verdict).
-6. After a 1.5 s wide-overview hold, dispatches an empty bucket to
+6. After a 1.5 s wide-overview hold, dispatches an empty carrier to
    every source node in the DAG (typically just the Generator) to
    start the first cycle.
 
@@ -131,17 +131,17 @@ From here on the cycle plays out per whatever topology the Orchestrator
 built. For the canonical 4-station Generator → Filter → Sorter → Checker
 mission:
 
-1. **Generator** fills the bucket with a fresh batch of integers per
-   its `CurrentRule`. The bucket renders as a glowing-gold wireframe
+1. **Generator** fills the carrier with a fresh batch of integers per
+   its `CurrentRule`. The carrier renders as a glowing-gold wireframe
    crate with billiard-style numbered spheres inside. The camera
-   locks onto the bucket and zooms wide → mid → close → hold over
+   locks onto the carrier and zooms wide → mid → close → hold over
    the Working window — same choreography for every Working state.
-2. **Filter** carries the bucket to its dock. Claude returns the kept
+2. **Filter** carries the carrier to its dock. Claude returns the kept
    subset; the SELECTED balls glow emissive gold for one second while
    the rejected balls stay with their normal painted-number material —
    the audience sees the contrast — then the rejected balls vanish.
 3. **Sorter** reorders the kept items.
-4. **Checker** verifies the bucket against its **derived** rule.
+4. **Checker** verifies the carrier against its **derived** rule.
    `bUseDerivedRule` defaults to true, so at read time
    `GetEffectiveRule` walks the DAG ancestors of the Checker node and
    composes their current rules into one — *"Generator did X, Filter
@@ -151,7 +151,7 @@ mission:
      the next cycle spawns.
    - **REJECT** → red flash, the Checker complains aloud naming every
      offending value and the responsible station, the rework worker
-     carries the bucket back, and the **camera chases the bucket**
+     carries the carrier back, and the **camera chases the carrier**
      until it docks at the rework station.
 
 **More elaborate missions just work.** A 5-stage line like *"generate
@@ -161,19 +161,19 @@ different jobs — and a **mid-chain Checker** that verifies the sorted
 list and silently forwards (no green flash mid-chain) to the second
 Filter. The cycle completes at the actual terminal — Filter/1 in this
 case — with the green flash + auto-loop. The camera follows whichever
-bucket is being processed regardless of station instance number.
+carrier is being processed regardless of station instance number.
 
 **Hail any agent** with *"Hey Filter, do you read me?"* — the Filter
 worker glows green, Filter speaks an affirmation, the next push-to-talk
 routes to Filter as a command (e.g. *"Only filter the odd numbers"*).
-Filter acknowledges via TTS and every subsequent bucket flows through
+Filter acknowledges via TTS and every subsequent carrier flows through
 the new rule. Voice is the only chat input; pressing Space silences any
 in-flight agent voice so you're never fighting the agents for the
 audio channel.
 
 **Change your mind mid-session.** Press M again, or voice a different
 mission ("I want twelve numbers, only evens, sorted descending"). The
-old line — stations, workers, mid-flight buckets, cinematic shots,
+old line — stations, workers, mid-flight carriers, cinematic shots,
 even the per-agent `.md` overrides — disappears atomically; the new
 spec materializes in the same place. The Orchestrator + your chat
 history with it stay across re-missions.
@@ -241,7 +241,7 @@ graph TB
   subgraph Spawned per mission
     Stations["N× AStation subclasses<br/>Generator/Filter/Sorter/Checker<br/>Each carries an FNodeRef (Kind, Instance) so two<br/>Filters of the same Kind don't collide"]
     Workers[N× AWorkerRobot<br/>Phase events broadcast FNodeRef]
-    Carriers["APayloadCarrier<br/>typed UPayload + UPayloadVisualizer (Story 38)<br/>defaults: UIntegerArrayPayload + UBilliardBallVisualizer<br/>= the wireframe-crate-with-billiard-balls bucket"]
+    Carriers["APayloadCarrier<br/>typed UPayload + UPayloadVisualizer (Story 38)<br/>defaults: UIntegerArrayPayload + UBilliardBallVisualizer<br/>= the wireframe-crate-with-billiard-balls carrier"]
     Cinematic[ACinematicCameraDirector<br/>One wide-overview shot + permanent FollowCamera<br/>Mode: WideOverview / FollowingBucket / ChasingBucket<br/>Framing-keyframe sequence drives the zoom-dance]
     Feedback[AAssemblyLineFeedback<br/>red/green flash lights]
   end
@@ -343,7 +343,7 @@ sequenceDiagram
   Chat->>GM: OnDAGProposed(Nodes, PromptsByKind)
   Note over GM: Story 34 — atomic teardown first
   GM->>GM: ClearExistingLine
-  GM->>World: Destroy old stations/workers/buckets/cinematic/feedback
+  GM->>World: Destroy old stations/workers/carriers/cinematic/feedback
   GM->>FS: Wipe Saved/Agents/{Generator,Filter,Sorter,Checker}.md
   GM->>Dir: ClearLineState (reset maps + DAG + cancel timers)
 
@@ -359,7 +359,7 @@ sequenceDiagram
     GM->>Cin: SpawnCinematicDirector (shots regen from positions)
     GM->>World: SpawnFeedback (re-bind to Director events)
     GM->>Dir: 1.5s timer → StartAllSourceCycles
-    Dir->>Dir: For each source node:<br/>spawn empty bucket, DispatchToStation
+    Dir->>Dir: For each source node:<br/>spawn empty carrier, DispatchToStation
   else invalid (cycle / dup-kind / unknown type)
     GM->>GM: SpawnLineFromSpec returns false<br/>nothing spawned, error logged
   end
@@ -572,10 +572,10 @@ same rule even at our (currently small) scale.
 
 [`UAssemblyLineDirector::OnRobotDoneAt`](Source/AssemblyLineSimul/AssemblyLineDirector.cpp)
 is where the DAG meets gameplay. When a worker finishes carrying a
-bucket through its station's `ProcessBucket`, this fires.
+carrier through its station's `ProcessBucket`, this fires.
 
 For most nodes (single successor, no fan-in at the destination), the
-dispatch is just *"look up the next node, hand the bucket to its
+dispatch is just *"look up the next node, hand the carrier to its
 worker"* — same cost as the old hardcoded chain.
 
 **`FNodeRef`-keyed dispatch end-to-end (Story 35).** Director maps
@@ -628,8 +628,8 @@ on the Director hold the gate state:
 ```mermaid
 stateDiagram-v2
   [*] --> Empty: BuildLineDAG
-  Empty --> Partial: First parent arrives<br/>(init Waits = GetParents(Child))<br/>(Waits.Remove(Parent))<br/>(InboundBuckets.Add(Bucket))
-  Partial --> Partial: Another parent arrives<br/>(Waits.Remove(Parent))<br/>(InboundBuckets.Add(Bucket))
+  Empty --> Partial: First parent arrives<br/>(init Waits = GetParents(Child))<br/>(Waits.Remove(Parent))<br/>(InboundBuckets.Add(Carrier))
+  Partial --> Partial: Another parent arrives<br/>(Waits.Remove(Parent))<br/>(InboundBuckets.Add(Carrier))
   Partial --> Fired: Last parent arrives<br/>(Waits empty)<br/>FireFanInMerge → Child->ProcessBucket(Inputs)
   Fired --> Empty: WaitingFor.Remove(Child)<br/>InboundBuckets.Remove(Child)<br/>Inputs[1..N-1] destroyed<br/>Inputs[0] continues the chain
 ```
@@ -650,7 +650,7 @@ re-fan-in correctly.
 calls `Director->GetDAG().GetAncestors(CheckerNodeRef)` and composes
 each ancestor's `CurrentRule` into the verdict prompt at read time.
 Mid-flight rule changes upstream automatically reach the Checker
-without needing a recompile or a re-spawn — the next bucket through
+without needing a recompile or a re-spawn — the next carrier through
 the Checker reads fresh ancestor rules. For the typical linear
 4-station mission this resolves identically to the old hardcoded
 type-lookup; for fan-in topologies it gets the right multi-source
@@ -749,7 +749,7 @@ mission text reaches Claude wrapped in `OrchestratorChatPromptTemplate`.
     "Generator": "You are the source of fresh integer batches...",
     "Filter":    "You sift the wheat from the chaff...",
     "Sorter":    "You impose order on what arrives...",
-    "Checker":   "You are the final word on whether a bucket passes..."
+    "Checker":   "You are the final word on whether a carrier passes..."
   }
 }
 ```
@@ -832,7 +832,7 @@ Director's `OnCycleCompleted` and `OnCycleRejected`.
 
 **10. After 1.5 s, `Director->StartAllSourceCycles`** walks
 `DAG.GetSourceNodes()` (just `[G:0]` for this DAG), spawns an empty
-bucket at G's input slot, dispatches it. The cycle begins.
+carrier at G's input slot, dispatches it. The cycle begins.
 
 ### Re-missioning teardown sequence
 
@@ -849,7 +849,7 @@ sequenceDiagram
   participant World as Spawned Actors
   participant FS as Saved/Agents/
 
-  Note over Op,FS: Mission A is running with bucket mid-flight...
+  Note over Op,FS: Mission A is running with carrier mid-flight...
 
   Op->>Chat: New mission via M or voice
   Chat->>GM: OnDAGProposed(Nodes_B, Prompts_B)
@@ -858,7 +858,7 @@ sequenceDiagram
   Note over GM,World: Atomic teardown — no half-state visible
   GM->>World: Destroy non-Orchestrator stations
   GM->>World: Destroy all worker robots
-  GM->>World: Destroy all buckets (in-flight + idle)
+  GM->>World: Destroy all carriers (in-flight + idle)
   GM->>World: Destroy cinematic + feedback
   GM->>FS: Wipe Generator.md / Filter.md / Sorter.md / Checker.md
 
@@ -931,22 +931,22 @@ cloning + the wait gate.
 
 ```mermaid
 flowchart LR
-  Start([StartAllSourceCycles]) --> Spawn[Spawn empty bucket<br/>at each source's InputSlot]
-  Spawn --> G[Generator robot:<br/>walks → ProcessBucket via Claude<br/>fills bucket per CurrentRule]
+  Start([StartAllSourceCycles]) --> Spawn[Spawn empty carrier<br/>at each source's InputSlot]
+  Spawn --> G[Generator robot:<br/>walks → ProcessBucket via Claude<br/>fills carrier per CurrentRule]
   G --> F[Filter robot:<br/>walks → ProcessBucket via Claude<br/>kept balls glow gold for 1 s,<br/>then rejected balls vanish]
   F --> S[Sorter robot:<br/>walks → ProcessBucket via Claude<br/>sorts per CurrentRule]
   S --> C[Checker robot:<br/>walks → ProcessBucket via Claude<br/>verifies vs derived rule from DAG ancestors]
-  C -->|PASS| Pass[Green flash<br/>chase camera = victory beat<br/>destroy bucket after delay]
+  C -->|PASS| Pass[Green flash<br/>chase camera = victory beat<br/>destroy carrier after delay]
   Pass --> AutoLoop{bAutoLoop?}
   AutoLoop -->|yes| Start
   AutoLoop -->|no| Done([wait])
 
   C -->|REJECT| Reject[Red flash<br/>chase camera ON<br/>OnCycleRejected]
   Reject --> Dispatch[DispatchToStation:<br/>SendBackTo = Filter or Sorter]
-  Dispatch --> Rework[Rework worker walks back,<br/>picks up bucket,<br/>re-runs ProcessBucket with current rule]
+  Dispatch --> Rework[Rework worker walks back,<br/>picks up carrier,<br/>re-runs ProcessBucket with current rule]
 
-  Rework --> Empty{Bucket empty<br/>after rework?}
-  Empty -->|yes| Recycle[Speak 'Bucket empty — recycling'<br/>OnCycleRecycled<br/>destroy bucket]
+  Rework --> Empty{Carrier empty<br/>after rework?}
+  Empty -->|yes| Recycle[Speak 'Carrier empty — recycling'<br/>OnCycleRecycled<br/>destroy carrier]
   Recycle --> Start
   Empty -->|no, sent back to Filter| S
   Empty -->|no, sent back to Sorter| C
@@ -1010,7 +1010,7 @@ sequenceDiagram
   participant DAG as FAssemblyLineDAG
 
   U->>Chat: SendMessage Filter only filter even numbers
-  Chat->>CA: prompt via ChatPromptTemplate (role + rule + bucket + history)
+  Chat->>CA: prompt via ChatPromptTemplate (role + rule + carrier + history)
   CA-->>Chat: reply JSON has reply field and new_rule field
 
   Chat->>St: CurrentRule equals Keep only the even numbers
@@ -1020,7 +1020,7 @@ sequenceDiagram
   Chat->>Chat: SpeakResponse Filter here plus reply
   Chat->>Chat: SpeakResponse Rule updated message
 
-  Note over St: Next bucket through Filter ProcessBucket builds prompt with the new EffectiveRule and logs ProcessBucket using rule
+  Note over St: Next carrier through Filter ProcessBucket builds prompt with the new EffectiveRule and logs ProcessBucket using rule
 ```
 
 ### Orchestrator-authored prompt pipeline
@@ -1064,7 +1064,7 @@ break gameplay.
 ### Cinematic camera architecture (Story 36 deep dive)
 
 Story 36 replaced the static-shot-per-station model with a
-**subject-tracking** camera that locks onto whichever bucket is
+**subject-tracking** camera that locks onto whichever carrier is
 currently being processed and plays a **framing keyframe sequence**
 (wide → mid → close → hold) over the Working window. Multi-instance
 correct by construction (no per-station shot table to collide); chase
@@ -1075,15 +1075,15 @@ correct by construction (no per-station shot table to collide); chase
 ```mermaid
 stateDiagram-v2
   [*] --> WideOverview
-  WideOverview --> FollowingBucket: HandleStationActive(FNodeRef)<br/>(GetRobotByNodeRef → bucket → EnterFollowingBucket)
+  WideOverview --> FollowingBucket: HandleStationActive(FNodeRef)<br/>(GetRobotByNodeRef → carrier → EnterFollowingBucket)
   FollowingBucket --> WideOverview: HandleStationIdle(FNodeRef) after LingerSecondsAfterIdle
   FollowingBucket --> FollowingBucket: HandleStationActive(other FNodeRef)<br/>(most-recent-subject tiebreak — replace subject + restart sequence)
   FollowingBucket --> WideOverview: subject destroyed mid-tick (TWeakObjectPtr null)
 
-  WideOverview --> ChasingBucket: HandleCycleRejected(bucket) or HandleCycleResumed(bucket) PASS
+  WideOverview --> ChasingBucket: HandleCycleRejected(carrier) or HandleCycleResumed(carrier) PASS
   FollowingBucket --> ChasingBucket: same
   ChasingBucket --> FollowingBucket: HandleStationActive (rework station starts Working)
-  ChasingBucket --> WideOverview: subject destroyed (bucket recycled / cycle ended)
+  ChasingBucket --> WideOverview: subject destroyed (carrier recycled / cycle ended)
 
   note right of FollowingBucket
     Tick(dt):
@@ -1096,7 +1096,7 @@ stateDiagram-v2
   note right of ChasingBucket
     Same FollowCamera actor as FollowingBucket;
     fixed chase Offset (-180, 320, 220) instead of
-    keyframe interpolation. Tick re-aims at the bucket.
+    keyframe interpolation. Tick re-aims at the carrier.
   end note
 ```
 
@@ -1107,9 +1107,9 @@ FVector Offset; float FOV; float BlendTime; }`. The default sequence
 (authored at `SpawnCinematicDirector` time):
 
 ```
-t=0.0   wide-on-bucket   offset=(-100, 600, 800)  FOV=70  blend=1.0s
-t=2.0   mid-on-bucket    offset=( -50, 400, 500)  FOV=55  blend=1.5s
-t=4.5   close-on-bucket  offset=(   0, 250, 280)  FOV=42  blend=1.5s
+t=0.0   wide-on-carrier   offset=(-100, 600, 800)  FOV=70  blend=1.0s
+t=2.0   mid-on-carrier    offset=( -50, 400, 500)  FOV=55  blend=1.5s
+t=4.5   close-on-carrier  offset=(   0, 250, 280)  FOV=42  blend=1.5s
 t=7.0   hold close       offset=(   0, 250, 280)  FOV=42  blend=0.5s
 ```
 
@@ -1144,20 +1144,20 @@ second Filter went uncovered. Static-shot frames also assumed a fixed
 station layout that fan-out / fan-in topologies don't honor.
 
 The subject-tracking model has no per-station map. It tracks an
-actor (the bucket) with an offset; works regardless of how many
+actor (the carrier) with an offset; works regardless of how many
 instances of one Kind exist or where they're laid out. The chase
-camera (Story 16) was already doing this for rejected buckets;
+camera (Story 16) was already doing this for rejected carriers;
 Story 36 unified closeup + chase onto the same single `FollowCamera`
 actor.
 
 #### What this gives you
 
 - **Multi-instance correct.** Filter/0 and Filter/1 both get the same
-  zoom-dance on their respective buckets; no per-station shot
+  zoom-dance on their respective carriers; no per-station shot
   collision.
 - **Topology-agnostic.** Fan-out, fan-in, mid-chain Checker, anything
   the Orchestrator can express — the camera follows wherever the
-  active bucket is.
+  active carrier is.
 - **Re-mission-safe.** Story 34's atomic teardown destroys the
   cinematic; the new spec's spawn re-spawns it with one shot + one
   follow camera. No leftover per-station shots from the prior
@@ -1346,8 +1346,8 @@ existed; their full intent lives in commit messages (`git log
 - **Story 8** ([`1f75da4`](https://github.com/eyupgurel/AssemblyLineSimul/commit/1f75da4)) — Designers can swap `UStationTalkWidget` for a Blueprint subclass.
 - **Story 9** ([`68b1aad`](https://github.com/eyupgurel/AssemblyLineSimul/commit/68b1aad)) — `AAssemblyLineFeedback` flashes transient green/red point lights on Checker accept / reject.
 
-### Phase 4 — Bucket visualisation (stories 10–11)
-- **Story 10** ([`abce2ad`](https://github.com/eyupgurel/AssemblyLineSimul/commit/abce2ad)) — Bucket renders contents as numbered spheres inside a 12-edge wireframe crate.
+### Phase 4 — Carrier visualisation (stories 10–11)
+- **Story 10** ([`abce2ad`](https://github.com/eyupgurel/AssemblyLineSimul/commit/abce2ad)) — Carrier renders contents as numbered spheres inside a 12-edge wireframe crate.
 - **Story 11** ([`4fe0d46`](https://github.com/eyupgurel/AssemblyLineSimul/commit/4fe0d46)) — Spheres become billiard-style: per-number color, runtime canvas-rendered numbers.
 
 ### Phase 5 — Cinematic polish (story 12)
@@ -1361,8 +1361,8 @@ existed; their full intent lives in commit messages (`git log
 - **[Story 15](Stories/Story_15_Audible_Checker_Verdicts.md)** — `AStation::SpeakAloud` does panel + macOS `say` together; Checker uses it for both PASS and the verbose REJECT complaint.
 
 ### Phase 8 — Failure handling (stories 16–17)
-- **[Story 16](Stories/Story_16_Camera_Follows_Rejected_Bucket.md)** — Cinematic chase camera. On REJECT the camera follows the bucket back to the rework station; on PASS the camera holds a "victory beat".
-- **[Story 17](Stories/Story_17_Robust_Rework_Flow.md)** — Mid-flight rule changes don't cancel the in-flight bucket; empty bucket after rework triggers a visible recycle and a fresh Generator cycle.
+- **[Story 16](Stories/Story_16_Camera_Follows_Rejected_Bucket.md)** — Cinematic chase camera. On REJECT the camera follows the carrier back to the rework station; on PASS the camera holds a "victory beat".
+- **[Story 17](Stories/Story_17_Robust_Rework_Flow.md)** — Mid-flight rule changes don't cancel the in-flight carrier; empty carrier after rework triggers a visible recycle and a fresh Generator cycle.
 
 ### Phase 9 — Worker / scene polish (stories 18–20)
 - **[Story 18](Stories/Story_18_Worker_Visual_Polish.md)** — UE5 Manny mannequin (anim swap, 1.5× scale).
@@ -1371,7 +1371,7 @@ existed; their full intent lives in commit messages (`git log
 
 ### Phase 10 — Visual cleanup pivot (stories 21–25)
 - **Story 21** — *Abandoned.* Fab "Free Fantasy Work Table" prop pivot offset was too fragile; reverted.
-- **[Story 22](Stories/Story_22_Cleanup_After_Gold_Bucket.md)** — Cleanup pass after the gold-bucket pivot.
+- **[Story 22](Stories/Story_22_Cleanup_After_Gold_Bucket.md)** — Cleanup pass after the gold-carrier pivot.
 - **[Story 23](Stories/Story_23_Strip_InWorld_Text.md)** — Stripped every in-world text label. TTS audio preserved.
 - **[Story 24](Stories/Story_24_Filter_Selected_Glow.md)** — *Superseded by Story 25.*
 - **[Story 25](Stories/Story_25_Filter_Selection_Preview.md)** — Filter selection preview: SELECTED balls glow gold for one second while REJECTED balls remain visible — audience sees the contrast.
@@ -1403,7 +1403,7 @@ existed; their full intent lives in commit messages (`git log
 - **[Story 33b](Stories/Story_33b_Orchestrator_Authored_Prompts.md)** — `OrchestratorChatPromptTemplate` extended to ask for a sibling `prompts` object (one Role paragraph per spawned station). New `OrchestratorParser::ParsePlan` extracts both `dag` and `prompts`. `OnDAGProposed` signature extended to two params. `WriteOrchestratorAuthoredPrompts` composes Role + spec.Rule + static `ProcessBucketPrompt` (+ Checker `DerivedRuleTemplate`) into a complete `.md` per Kind, written to `Saved/Agents/`. New `AgentPromptLibrary::InvalidateCache`. Loader checks `Saved/Agents/` before `Content/Agents/`. Bumped `MaxTokens` 512 → 4096 (the Orchestrator's full reply was getting truncated mid-JSON).
 
 ### Phase 17 — Re-missioning teardown (story 34)
-- **[Story 34](Stories/Story_34_Re_Missioning_Teardown.md)** — Atomic teardown when a new DAG arrives. `ClearExistingLine` destroys non-Orchestrator stations + workers + buckets + cinematic + feedback; wipes `Saved/Agents/<Kind>.md`. `ClearLineState` resets Director maps + DAG; cancels timers via `ClearAllTimersForObject(this)` (recycle/auto-loop refactored to `CreateWeakLambda` so they're trackable). `HandleDAGProposed` orchestrates: clear → write prompts → invalidate cache → spawn → cinematic → feedback → start cycles. Orchestrator station + chat history survive.
+- **[Story 34](Stories/Story_34_Re_Missioning_Teardown.md)** — Atomic teardown when a new DAG arrives. `ClearExistingLine` destroys non-Orchestrator stations + workers + carriers + cinematic + feedback; wipes `Saved/Agents/<Kind>.md`. `ClearLineState` resets Director maps + DAG; cancels timers via `ClearAllTimersForObject(this)` (recycle/auto-loop refactored to `CreateWeakLambda` so they're trackable). `HandleDAGProposed` orchestrates: clear → write prompts → invalidate cache → spawn → cinematic → feedback → start cycles. Orchestrator station + chat history survive.
 
 ### Phase 18 — Multi-instance + subject-tracking camera + any-terminal completion (stories 35–37)
 
@@ -1414,7 +1414,7 @@ needed all three to actually run end-to-end.
 
 - **[Story 35](Stories/Story_35_Multi_Instance_Per_Kind.md)** — Multi-instance per Kind support. `FNodeRef` promoted to `USTRUCT`. `AStation` carries an `FNodeRef` field set by Director's per-Kind auto-instance counter. Director maps rekey from `EStationType` to `FNodeRef` (`StationByNodeRef`, `RobotByNodeRef`); backward-compat shims (`GetStationOfType`, `GetRobotForStation`) return Instance 0. `OnRobotDoneAt(EStationType)` becomes a shim over canonical `OnRobotDoneAt(FNodeRef)`. Dispatch chain (`DispatchToStation`, worker callback) carries `FNodeRef` end-to-end so Filter/0 finishing consults Filter/0's successors. Checker handles non-terminal placement: PASS forwards to successor, REJECT routes via `SendBackTo`. `SpawnLineFromSpec` drops the Story 32b duplicate-kind rejection.
 
-- **[Story 36](Stories/Story_36_Subject_Tracking_Camera.md)** — Subject-tracking cinematic camera with framing keyframe sequence. Worker phase events (`OnPickedUp`/`OnPlaced`/`OnStartedWorking`/`OnFinishedWorking`) and Director re-broadcasts (`OnStationActive`/`Idle`) carry `FNodeRef` instead of `EStationType`. `ACinematicCameraDirector` rewritten around `ECinematicMode { WideOverview, FollowingBucket, ChasingBucket }`. One permanent `FollowCamera` shared by Following + Chasing. Self-managed elapsed counter so tests are deterministic. Per-station static closeup shots are gone — `SpawnCinematicDirector` authors exactly ONE wide-overview shot + a default `FFramingSequence` (wide → mid → close → hold over ~7 s) that drives a zoom-dance per Working window. Per-Kind override via `FramingByKind`. The "second Filter is invisible to cinematic" Story 35 documented limitation is fixed by construction — the camera follows whichever bucket is active, no per-station map needed.
+- **[Story 36](Stories/Story_36_Subject_Tracking_Camera.md)** — Subject-tracking cinematic camera with framing keyframe sequence. Worker phase events (`OnPickedUp`/`OnPlaced`/`OnStartedWorking`/`OnFinishedWorking`) and Director re-broadcasts (`OnStationActive`/`Idle`) carry `FNodeRef` instead of `EStationType`. `ACinematicCameraDirector` rewritten around `ECinematicMode { WideOverview, FollowingBucket, ChasingBucket }`. One permanent `FollowCamera` shared by Following + Chasing. Self-managed elapsed counter so tests are deterministic. Per-station static closeup shots are gone — `SpawnCinematicDirector` authors exactly ONE wide-overview shot + a default `FFramingSequence` (wide → mid → close → hold over ~7 s) that drives a zoom-dance per Working window. Per-Kind override via `FramingByKind`. The "second Filter is invisible to cinematic" Story 35 documented limitation is fixed by construction — the camera follows whichever carrier is active, no per-station map needed.
 
 - **[Story 37](Stories/Story_37_Any_DAG_Terminal_Completes_Cycle.md)** — Any DAG terminal completes the cycle. Pre-Story-35 only Checker could be a terminal; the runtime special-cased "Checker no successors → complete cycle." Multi-instance shapes put non-Checker nodes at the terminal (Filter/1 in the 5-stage mission), and the runtime froze with a warning. New `CompleteCycle` helper extracted from the Checker-terminal path; the no-successors branch now distinguishes registered terminal (`DAG.FindNode(Ref) != nullptr` → `CompleteCycle`) from unregistered Ref (warning preserved as a misconfiguration signal).
 
@@ -1452,13 +1452,13 @@ delta over 175 is Story 38: `BucketSpec` retired; replaced by
 | `AgentChatSubsystemSpec` | Per-agent history isolation, prompt construction, `SpeakResponse` test hook, `OnRuleUpdated` broadcast on chat-driven rule change, `StopSpeaking` empties active-say-handle store, **`OnDAGProposed` (Story 32b/33b) — broadcasts on Orchestrator dag-spec replies with parsed nodes + prompts; silent on `dag: null` and on non-Orchestrator agents; works even when Claude wraps JSON in prose / fences (regression test from a Story 33b PIE-check bug)**. |
 | `AgentPromptLibrarySpec` | `LoadAgentSection` returns the right `.md` section; `FormatPrompt` resolves `{{name}}`; **Orchestrator `Mission` section non-empty plain-English (Story 33a); `Saved/Agents/` precedence over `Content/Agents/` (Story 33b); `InvalidateCache` forces re-read on next load**. |
 | `AssemblyLineDAGSpec` | Story 31a DAG: `BuildFromDAG` rejects cycles via Kahn's algorithm (returns false + leaves DAG empty); `GetParents` / `GetSuccessors` / `GetAncestors` produce deterministic-order results; lazy back-edge cache builds on first `GetSuccessors` call; source/terminal node detection. |
-| `AssemblyLineDirectorSpec` | Worker phase events re-broadcast as `OnStationActive` **with FNodeRef payload (Story 36)**; empty-bucket recycle path; **fan-out (Story 31c) clones K times and destroys source**; **fan-in (Story 31d) wait-and-collect gate fires merge once both parents arrive and re-arms per cycle**; **`StartAllSourceCycles` (Story 32b) dispatches one bucket per source node**; **`ClearLineState` (Story 34) — empties StationByNodeRef (preserves Orchestrator), RobotByNodeRef, WaitingFor, InboundBuckets; resets DAG to NumNodes==0; cancels recycle/autoloop timers via the `CreateWeakLambda` refactor**; **multi-instance per Kind (Story 35) — RegisterStation auto-instances via per-Kind counter, two Filters get distinct `{Filter,0}` and `{Filter,1}` registrations, `OnRobotDoneAt(FNodeRef)` consults the right successors, GetStationOfType backward-compat shim returns Instance 0**; **Checker mid-chain handling (Story 35) — terminal vs mid-chain placement; mid-chain PASS forwards silently, REJECT routes via SendBackTo**; **any DAG terminal completes the cycle (Story 37) — registered terminal broadcasts `OnCycleCompleted` via the new `CompleteCycle` helper; unregistered Ref still warns**. |
-| `AssemblyLineFeedbackSpec` | Accept/reject light spawning at the bucket location. |
-| `AssemblyLineGameModeSpec` | **`SpawnOrchestrator` (Story 32b) spawns exactly one `AOrchestratorStation` and zero workers + registers with the Director**; **`SpawnLineFromSpec` spawns one station + worker per node, applies per-node rules, picks the right subclass per `Kind`, leaves the world untouched on cycles**; **multi-instance per Kind (Story 35) — accepts a 5-node spec with two Filters, spawns 5 stations + 5 workers, each station's `NodeRef` matches its spec node's NodeRef, GetStationOfType returns Instance 0 (backward-compat shim)**; **`SpawnCinematicDirector` (Story 36) authors exactly ONE wide-overview shot regardless of station count + a non-empty `DefaultFollowSequence` zoom dance + spawns the permanent FollowCamera**; **`SendDefaultMission` (Story 33a) reads Mission section + routes through chat; no-op when chat unavailable**; **`WriteOrchestratorAuthoredPrompts` (Story 33b) writes Saved/Agents/<Kind>.md with Role + spec.Rule + static ProcessBucketPrompt + Checker DerivedRuleTemplate preserved**; **`ClearExistingLine` (Story 34) destroys each actor class, preserves Orchestrator + AssemblyLineFloor tiles, no-op on empty world, wipes stale Saved/Agents/**; **`HandleDAGProposed` re-mission tests — second invocation leaves only mission B's actors (the original duplicate-bucket bug); preserves Orchestrator registration; in-flight bucket destroyed; subsequent reads pick up new mission's Saved/Agents/ Role**; propagates `WorkerRobotMeshAsset` / `CarrierClass` (was `BucketClass` pre-Story-38); `SpawnFloor` (Story 20). |
+| `AssemblyLineDirectorSpec` | Worker phase events re-broadcast as `OnStationActive` **with FNodeRef payload (Story 36)**; empty-bucket recycle path; **fan-out (Story 31c) clones K times and destroys source**; **fan-in (Story 31d) wait-and-collect gate fires merge once both parents arrive and re-arms per cycle**; **`StartAllSourceCycles` (Story 32b) dispatches one carrier per source node**; **`ClearLineState` (Story 34) — empties StationByNodeRef (preserves Orchestrator), RobotByNodeRef, WaitingFor, InboundBuckets; resets DAG to NumNodes==0; cancels recycle/autoloop timers via the `CreateWeakLambda` refactor**; **multi-instance per Kind (Story 35) — RegisterStation auto-instances via per-Kind counter, two Filters get distinct `{Filter,0}` and `{Filter,1}` registrations, `OnRobotDoneAt(FNodeRef)` consults the right successors, GetStationOfType backward-compat shim returns Instance 0**; **Checker mid-chain handling (Story 35) — terminal vs mid-chain placement; mid-chain PASS forwards silently, REJECT routes via SendBackTo**; **any DAG terminal completes the cycle (Story 37) — registered terminal broadcasts `OnCycleCompleted` via the new `CompleteCycle` helper; unregistered Ref still warns**. |
+| `AssemblyLineFeedbackSpec` | Accept/reject light spawning at the carrier location. |
+| `AssemblyLineGameModeSpec` | **`SpawnOrchestrator` (Story 32b) spawns exactly one `AOrchestratorStation` and zero workers + registers with the Director**; **`SpawnLineFromSpec` spawns one station + worker per node, applies per-node rules, picks the right subclass per `Kind`, leaves the world untouched on cycles**; **multi-instance per Kind (Story 35) — accepts a 5-node spec with two Filters, spawns 5 stations + 5 workers, each station's `NodeRef` matches its spec node's NodeRef, GetStationOfType returns Instance 0 (backward-compat shim)**; **`SpawnCinematicDirector` (Story 36) authors exactly ONE wide-overview shot regardless of station count + a non-empty `DefaultFollowSequence` zoom dance + spawns the permanent FollowCamera**; **`SendDefaultMission` (Story 33a) reads Mission section + routes through chat; no-op when chat unavailable**; **`WriteOrchestratorAuthoredPrompts` (Story 33b) writes Saved/Agents/<Kind>.md with Role + spec.Rule + static ProcessBucketPrompt + Checker DerivedRuleTemplate preserved**; **`ClearExistingLine` (Story 34) destroys each actor class, preserves Orchestrator + AssemblyLineFloor tiles, no-op on empty world, wipes stale Saved/Agents/**; **`HandleDAGProposed` re-mission tests — second invocation leaves only mission B's actors (the original duplicate-carrier bug); preserves Orchestrator registration; in-flight carrier destroyed; subsequent reads pick up new mission's Saved/Agents/ Role**; propagates `WorkerRobotMeshAsset` / `CarrierClass` (was `BucketClass` pre-Story-38); `SpawnFloor` (Story 20). |
 | `IntegerArrayPayloadSpec` | **Story 38** — `UIntegerArrayPayload` data type: `ItemCount`/`IsEmpty`, `ToPromptString` formats as `[1, 2, 3]`, `Clone(Outer)` deep-copies independently, `SetItems` mutates + broadcasts `OnChanged` once. |
 | `PayloadCarrierSpec` | **Story 38** — `APayloadCarrier` integration: `OnConstruction` auto-instantiates `Payload` + `Visualizer` from `PayloadClass`/`VisualizerClass` defaults; visualizer auto-binds to payload; `GetContentsString` delegates to `Payload->ToPromptString` (returns `[]` when null); `CloneIntoWorld` (Story 31c, post-38) returns a distinct actor with deep-cloned payload and a fresh visualizer bound to the clone's payload; `HighlightItemsAtIndices` delegates to visualizer. |
 | `BilliardBallVisualizerSpec` | **Story 38** — `UBilliardBallVisualizer`: crate built once with 12 cylinder edges; `Rebuild` on payload change re-spawns one numbered sphere per item; `OnVisualizationRevealed` fires on first non-empty rebuild; `HighlightItemsAtIndices` swaps the highlight material on the targeted balls. |
-| `CinematicCameraDirectorSpec` | **Story 36 — subject-tracking camera. Default mode `WideOverview` with no follow subject; `Start` spawns the wide-overview shot camera + the permanent FollowCamera; `EnterFollowingBucket` switches mode + sets subject + places camera at first-keyframe offset; most-recent-subject tiebreak replaces subject + restarts sequence; `Tick` positions FollowCamera at subject + active-keyframe offset; interpolates between keyframes over time (60-step manual tick verifies midway-Z); `FramingByKind` per-Kind override applies when present, falls back to `DefaultFollowSequence`; `HandleStationIdle` returns to WideOverview; subject destroyed mid-tick → falls back to WideOverview; chase preserved (HandleCycleRejected enters ChasingBucket mode); chase + follow share the same FollowCamera actor; null-bucket chase falls back to WideOverview**. |
+| `CinematicCameraDirectorSpec` | **Story 36 — subject-tracking camera. Default mode `WideOverview` with no follow subject; `Start` spawns the wide-overview shot camera + the permanent FollowCamera; `EnterFollowingBucket` switches mode + sets subject + places camera at first-keyframe offset; most-recent-subject tiebreak replaces subject + restarts sequence; `Tick` positions FollowCamera at subject + active-keyframe offset; interpolates between keyframes over time (60-step manual tick verifies midway-Z); `FramingByKind` per-Kind override applies when present, falls back to `DefaultFollowSequence`; `HandleStationIdle` returns to WideOverview; subject destroyed mid-tick → falls back to WideOverview; chase preserved (HandleCycleRejected enters ChasingBucket mode); chase + follow share the same FollowCamera actor; null-carrier chase falls back to WideOverview**. |
 | `DAGBuilderSpec` | Story 31e fluent fixture: `Source` adds a parent-less node, `Edge(from, to)` adds an edge with `AddUnique` parent dedup, `Build()` returns the right `TArray<FStationNode>`. |
 | `OpenAIAPISubsystemSpec` | Whisper multipart body shape: `language=en` pinned, `model=whisper-1`, file part with filename + MIME, raw audio bytes embedded verbatim. |
 | `OrchestratorParserSpec` | Story 32a: empty / linear / fan-out / fan-in JSON specs parse correctly; malformed JSON, unknown station type, undeclared parent ID return false + Error log. **Story 33b `ParsePlan`: extracts the prompts object alongside dag; missing prompts non-fatal; unknown station-type key in prompts logs Warning and skips; malformed JSON returns false**. **Story 35 multi-instance: a 5-node spec with two Filters parses into FNodeRef{Filter,0} + FNodeRef{Filter,1} (one per spec entry, distinct Instances; edges resolve correctly across multi-instance)**. |
@@ -1667,14 +1667,14 @@ Voice should work.
   When the Checker sits mid-chain (e.g., the 5-stage *"...check, then
   take only the best 2"* mission), PASS forwards silently to the
   successor. Auto-loop with a visible verdict cue would race the
-  in-flight bucket against a fresh source-spawn, so for v1 mid-chain
+  in-flight carrier against a fresh source-spawn, so for v1 mid-chain
   PASS is silent. The actual terminal still gets the green flash via
   Story 37's `CompleteCycle`.
 - **Multi-terminal cycle dedup not yet supported (Story 37 tradeoff).**
   A spec with multiple terminals (e.g., a fan-out where both branches
   end in distinct terminals) fires `OnCycleCompleted` once per terminal
   that completes. Each schedules the auto-loop timer, which would
-  spawn multiple Generator buckets simultaneously. No current mission
+  spawn multiple Generator carriers simultaneously. No current mission
   shape exercises this. Future story adds a per-cycle "already
   completed" flag.
 - **Chat history grows unbounded across re-missions.** The
@@ -1695,7 +1695,7 @@ Voice should work.
   each other's input file. Fix: per-call unique filenames or
   `osascript`.
 - **No rework cap**: the Director will keep dispatching rejected
-  buckets back to the rework station as long as the Checker keeps
+  carriers back to the rework station as long as the Checker keeps
   rejecting. By design (the demo wants to show the agents trying
   again), but in production you'd want a hard limit.
 - **Filter selection preview only** — Sorter and Checker don't have
