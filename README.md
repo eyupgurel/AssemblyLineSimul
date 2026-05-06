@@ -497,8 +497,8 @@ in-degree of their children, and aborts on a cycle:
 
 ```mermaid
 flowchart TD
-  Start([BuildFromDAG]) --> Compute[For each node N:<br/>in_degree[N] := Parents.Num]
-  Compute --> Init[Queue := all nodes with in_degree == 0]
+  Start([BuildFromDAG]) --> Compute["For each node N:<br/>in_degree N := Parents.Num"]
+  Compute --> Init["Queue := all nodes with in_degree == 0"]
   Init --> Loop{Queue empty?}
   Loop -->|no| Pop["N := Queue.Pop()<br/>Visited++<br/>For each child C:<br/>  in_degree[C]--<br/>  if in_degree[C] == 0:<br/>    Queue.Push(C)"]
   Pop --> Loop
